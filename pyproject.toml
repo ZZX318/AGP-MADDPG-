@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "uav-3d-planner-template"
+version = "0.1.0"
+description = "可扩展的三维多无人机路径规划模板：注册表式地图与算法插件"
+requires-python = ">=3.9"
+dependencies = ["numpy>=1.23"]
+
+[project.optional-dependencies]
+plot = ["matplotlib>=3.7"]
+dev = ["pytest>=7"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["uav_planner*"]
+
+[project.scripts]
+uav3d = "uav_planner.cli:main"

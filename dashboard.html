@@ -1,0 +1,1229 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>UAV 3D Planner · 模板驾驶舱</title>
+<style>
+:root{
+  --bg0:#060d16; --bg1:#0b1826; --bg2:#101f31;
+  --line:#1e3a52; --line2:#2b5171;
+  --fg:#dbe8f2; --dim:#7f9ab0;
+  --accent:#35d0ff; --ok:#3ddc97; --warn:#ffb454; --bad:#ff6b7a;
+  --mono:ui-monospace,SFMono-Regular,Consolas,monospace;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; background:var(--bg0); color:var(--fg);
+  font:13px/1.5 "Segoe UI","Microsoft YaHei",system-ui,sans-serif;
+  display:grid; grid-template-rows:auto 1fr; overflow:hidden;
+}
+
+/* ---------- 顶栏 ---------- */
+header{
+  display:flex; align-items:center; gap:16px;
+  padding:10px 16px; background:linear-gradient(180deg,#0e1e2e,#0a1520);
+  border-bottom:1px solid var(--line);
+}
+header .logo{font-weight:700; font-size:15px; letter-spacing:.3px}
+header .logo small{color:var(--dim); font-weight:400; font-size:11px; margin-left:8px}
+header .spacer{flex:1}
+.pill{
+  display:inline-flex; align-items:center; gap:6px;
+  padding:4px 10px; border-radius:999px; font-size:11px;
+  background:#0d2233; border:1px solid var(--line2); color:var(--dim);
+}
+.pill .led{width:7px;height:7px;border-radius:50%;background:var(--dim)}
+.pill.ok .led{background:var(--ok); box-shadow:0 0 8px var(--ok)}
+.pill.warn .led{background:var(--warn); box-shadow:0 0 8px var(--warn)}
+.pill.ok{color:var(--ok); border-color:#1d5a44}
+.pill.warn{color:var(--warn); border-color:#5a441d}
+
+/* ---------- 主体三列 ---------- */
+main{display:grid; grid-template-columns:264px 1fr 300px; min-height:0}
+
+/* 左：控制台 */
+#controls{
+  background:var(--bg1); border-right:1px solid var(--line);
+  overflow-y:auto; padding:14px;
+}
+.sec{margin-bottom:18px}
+.sec > h3{
+  margin:0 0 8px; font-size:11px; font-weight:600; letter-spacing:.8px;
+  text-transform:uppercase; color:var(--dim);
+}
+.field{margin-bottom:10px}
+.field label{display:block; font-size:11px; color:var(--dim); margin-bottom:4px}
+.field .val{float:right; color:var(--accent); font-family:var(--mono)}
+select{
+  width:100%; padding:7px 8px; border-radius:6px;
+  background:#0a1a28; color:var(--fg); border:1px solid var(--line2);
+  font-size:12px; outline:none;
+}
+select:focus{border-color:var(--accent)}
+input[type=range]{
+  width:100%; height:4px; -webkit-appearance:none; appearance:none;
+  background:#16324a; border-radius:3px; outline:none;
+}
+input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none; width:13px; height:13px; border-radius:50%;
+  background:var(--accent); cursor:pointer; border:2px solid #06202e;
+}
+.chk{display:flex; gap:6px; align-items:center; font-size:12px; color:var(--dim); margin-top:6px}
+.chk input{accent-color:var(--accent)}
+button{
+  font:inherit; cursor:pointer; border-radius:6px; border:1px solid var(--line2);
+  background:#13293c; color:var(--fg); padding:7px 10px;
+}
+button:hover{background:#1a3348; border-color:var(--accent)}
+button:active{transform:translateY(1px)}
+#go{
+  width:100%; padding:10px; font-weight:600; font-size:13px;
+  background:linear-gradient(90deg,#0e6f8c,#12a3a3); border:0; color:#fff;
+  margin-top:4px;
+}
+#go:disabled{opacity:.5; cursor:default}
+
+/* 中：画布 */
+#stage{position:relative; background:radial-gradient(ellipse at 50% 20%,#0d1f30,#050a11 70%); min-width:0}
+#gl{display:block; width:100%; height:100%; touch-action:none; cursor:grab}
+#gl.dragging{cursor:grabbing}
+
+/* 画布浮层 */
+.hud{position:absolute; pointer-events:none}
+#tabs{
+  top:10px; left:10px; display:flex; gap:6px; pointer-events:auto;
+}
+#tabs button{padding:5px 12px; font-size:12px; background:#0a1825cc}
+#tabs button.on{background:#12586e; border-color:var(--accent); color:#fff}
+#cameras{
+  top:10px; right:10px; display:flex; gap:5px; pointer-events:auto; flex-wrap:wrap; justify-content:flex-end; max-width:300px;
+}
+#cameras button{padding:4px 9px; font-size:11px; background:#0a1825cc}
+#legend{
+  bottom:10px; left:10px; padding:8px 11px; border-radius:8px;
+  background:#050d16dd; border:1px solid var(--line); font-size:11px; color:var(--dim);
+  line-height:1.9;
+}
+.sw{display:inline-block; width:16px; height:3px; vertical-align:middle; margin-right:6px; border-radius:2px}
+#readout{
+  bottom:10px; right:10px; padding:8px 11px; border-radius:8px;
+  background:#050d16dd; border:1px solid var(--line); font-family:var(--mono); font-size:11px;
+  color:var(--dim); min-width:150px;
+}
+#readout b{color:var(--accent); font-weight:600}
+#hint{
+  position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+  color:#3d5a70; font-size:13px; pointer-events:none; text-align:center;
+}
+
+/* 单步播放条 */
+#stepbar{
+  position:absolute; left:50%; bottom:64px; transform:translateX(-50%);
+  display:none; gap:6px; align-items:center; padding:7px 11px;
+  background:#050d16e6; border:1px solid var(--line2); border-radius:9px;
+  pointer-events:auto;
+}
+#stepbar button{padding:4px 9px; font-size:11px}
+#stepbar input[type=range]{width:150px}
+#stepbar .lbl{font-family:var(--mono); font-size:11px; color:var(--dim); min-width:64px; text-align:center}
+
+/* 消融实验面板 */
+#ablationPanel{
+  position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+  display:none; width:min(760px, 92%); max-height:78%; overflow:auto;
+  background:#050d16f2; border:1px solid var(--line2); border-radius:12px;
+  padding:16px 18px; pointer-events:auto;
+  box-shadow:0 20px 60px #000a;
+}
+.ab-head{display:flex; align-items:baseline; justify-content:space-between; margin-bottom:12px}
+.ab-title{font-size:14px; font-weight:600}
+.ab-sub{font-size:11px; color:var(--dim)}
+.ab-table{width:100%; border-collapse:collapse; font-size:12px}
+.ab-table th{
+  text-align:right; padding:7px 6px; color:var(--dim); font-weight:500;
+  border-bottom:1px solid var(--line2); font-size:11px;
+}
+.ab-table th:first-child{text-align:left}
+.ab-table th.grp{text-align:center; border-bottom:1px solid #1d3d55; color:var(--accent); font-size:10.5px}
+.ab-table td{
+  padding:8px 6px; text-align:right; border-bottom:1px solid #12283a;
+  font-family:var(--mono); font-size:11.5px;
+}
+.ab-table td:first-child{text-align:left; font-family:inherit; font-size:12px}
+.ab-table tr:last-child td{border-bottom:0}
+.ab-table tr.full td{background:#0d2a3a; font-weight:600}
+.ab-table .ok{color:var(--ok)}
+.ab-table .bad{color:var(--bad)}
+.ab-empty{text-align:center !important; color:var(--dim); padding:22px 0 !important}
+.ab-note{margin-top:12px; font-size:11px; color:var(--dim); line-height:1.7}
+.ab-multi{display:flex; align-items:center; gap:6px; margin-top:12px;
+  font-size:11px; color:var(--dim); cursor:pointer}
+.ab-multi input{accent-color:var(--accent)}
+.ab-actions{margin-top:10px; display:flex; gap:8px}
+.ab-actions button{padding:6px 14px; font-size:12px}
+.ab-actions .primary{background:linear-gradient(90deg,#0e6f8c,#12a3a3); border:0; color:#fff}
+
+/* 右：数据面板 */
+#panel{
+  background:var(--bg1); border-left:1px solid var(--line);
+  overflow-y:auto; padding:14px;
+}
+.kpi{display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:14px}
+.kpi div{
+  background:#0a1926; border:1px solid var(--line); border-radius:7px; padding:9px 10px;
+}
+.kpi div span{display:block; font-size:10px; color:var(--dim); margin-bottom:3px}
+.kpi div b{font-size:16px; font-weight:600; font-family:var(--mono)}
+.kpi div b.ok{color:var(--ok)}
+.kpi div b.warn{color:var(--warn)}
+.kpi div b.bad{color:var(--bad)}
+table{width:100%; border-collapse:collapse; font-size:11.5px}
+table td{padding:5px 0; border-bottom:1px solid #142a3c; color:var(--dim)}
+table td:last-child{text-align:right; color:var(--fg); font-family:var(--mono)}
+.meter{margin:9px 0}
+.meter .top{display:flex; justify-content:space-between; font-size:10.5px; color:var(--dim); margin-bottom:3px}
+.meter .bar{height:5px; background:#12293c; border-radius:3px; overflow:hidden}
+.meter .bar i{display:block; height:100%; border-radius:3px; background:linear-gradient(90deg,var(--accent),var(--ok))}
+#note{font-size:11px; color:var(--dim); line-height:1.7; margin-top:10px}
+.sechead{
+  font-size:10.5px; letter-spacing:.7px; text-transform:uppercase;
+  color:var(--dim); margin:16px 0 8px; font-weight:600;
+}
+.sechead:first-child{margin-top:0}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">UAV 3D Planner<small>模板驾驶舱</small></div>
+  <div class="spacer"></div>
+  <div class="pill" id="statusPill"><span class="led"></span><span id="statusText">就绪</span></div>
+</header>
+
+<main>
+
+  <!-- ================= 左：控制台 ================= -->
+  <section id="controls">
+
+    <div class="sec">
+      <h3>场景与算法</h3>
+      <div class="field">
+        <label>地图</label>
+        <select id="mapSel"></select>
+      </div>
+      <div class="field">
+        <label>规划算法</label>
+        <select id="algoSel"></select>
+      </div>
+    </div>
+
+    <div class="sec">
+      <h3>计算设置</h3>
+      <div class="field">
+        <label>网格尺寸</label>
+        <select id="shapeSel"></select>
+      </div>
+      <div class="field">
+        <label>启发函数</label>
+        <select id="heurSel">
+          <option value="euclidean">欧氏 · A*</option>
+          <option value="zero">零值 · Dijkstra</option>
+        </select>
+      </div>
+      <label class="chk"><input type="checkbox" id="diagChk" checked> 26 邻域</label>
+      <label class="chk"><input type="checkbox" id="smoothChk" checked> 路径平滑</label>
+    </div>
+
+    <div class="sec">
+      <h3>场景参数</h3>
+      <div class="field">
+        <label>随机种子 <span class="val" id="seedVal">7</span></label>
+        <input type="range" id="seedRng" min="0" max="99" value="7">
+      </div>
+      <div class="field">
+        <label>无人机数 <span class="val" id="uavVal">1</span></label>
+        <input type="range" id="uavRng" min="1" max="6" value="1">
+      </div>
+      <div class="field">
+        <label>额外障碍 <span class="val" id="obsVal">0</span></label>
+        <input type="range" id="obsRng" min="0" max="48" step="4" value="0">
+      </div>
+      <div class="field">
+        <label>硬净空 (m) <span class="val" id="hardVal">0.35</span></label>
+        <input type="range" id="hardRng" min="0" max="1.2" step="0.05" value="0.35">
+      </div>
+    </div>
+
+    <button id="go">运行实验</button>
+  </section>
+
+  <!-- ================= 中：3D 画布 ================= -->
+  <section id="stage">
+    <canvas id="gl"></canvas>
+
+    <div class="hud" id="tabs">
+      <button data-mode="flight" class="on">飞行</button>
+      <button data-mode="search">搜索</button>
+      <button data-mode="ablation">消融</button>
+    </div>
+
+    <div class="hud" id="cameras">
+      <button data-cam="iso">等轴测</button>
+      <button data-cam="top">俯视</button>
+      <button data-cam="front">正视</button>
+      <button data-cam="side">侧视</button>
+      <button data-cam="reset">重置</button>
+    </div>
+
+    <div class="hud" id="legend"></div>
+    <div class="hud" id="readout"></div>
+    <div id="hint">正在加载…</div>
+
+    <!-- 消融实验结果表（论文 Sec. 4.5） -->
+    <div id="ablationPanel">
+      <div class="ab-head">
+        <span class="ab-title">消融实验 · 改进 A* 组件贡献</span>
+        <span class="ab-sub" id="abSub">论文 Sec. 4.5</span>
+      </div>
+      <table class="ab-table">
+        <thead>
+          <tr>
+            <th rowspan="2">变体</th>
+            <th colspan="2" class="grp">规划器原始输出</th>
+            <th colspan="2" class="grp">平滑后（终态）</th>
+            <th rowspan="2">扩展数</th>
+            <th rowspan="2">违规</th>
+          </tr>
+          <tr>
+            <th>路径长</th>
+            <th>净空</th>
+            <th>路径长</th>
+            <th>净空</th>
+          </tr>
+        </thead>
+        <tbody id="abBody">
+          <tr><td colspan="7" class="ab-empty">点「运行消融」开始</td></tr>
+        </tbody>
+      </table>
+
+      <div class="ab-actions">
+        <button id="abRun" class="primary">运行消融</button>
+        <button id="abClose">关闭</button>
+      </div>
+      <div class="ab-note" id="abNote">
+        左两列是<strong>规划器原始输出</strong>（不受平滑影响，最能反映各组件本质差异）；
+        右两列是<strong>平滑后的终态</strong>（与右侧面板同口径）。
+        「违规」按原始净空判定。
+      </div>
+    </div>
+
+    <div id="stepbar">
+      <button id="sbFirst">⏮</button>
+      <button id="sbPrev">◀</button>
+      <button id="sbPlay">▶ 播放</button>
+      <button id="sbNext">▶</button>
+      <button id="sbLast">⏭</button>
+      <input type="range" id="sbRange" min="0" max="100" value="0">
+      <span class="lbl" id="sbLabel">0 / 0</span>
+    </div>
+  </section>
+
+  <!-- ================= 右：数据面板 ================= -->
+  <section id="panel">
+    <div class="kpi">
+      <div><span>最小净空</span><b id="kClear">—</b></div>
+      <div><span>路径长度</span><b id="kLen">—</b></div>
+      <div><span>扩展节点</span><b id="kExp">—</b></div>
+      <div><span>规划耗时</span><b id="kTime">—</b></div>
+    </div>
+
+    <div class="sechead">规划层 / 执行层</div>
+    <table>
+      <tr><td>规划成功率</td><td id="tPs">—</td></tr>
+      <tr><td>执行成功率</td><td id="tEs">—</td></tr>
+      <tr><td>执行净空</td><td id="tEc">—</td></tr>
+      <tr><td>最小机间距</td><td id="tSep">—</td></tr>
+      <tr><td>平滑度</td><td id="tSm">—</td></tr>
+    </table>
+
+    <div class="sechead">路径质量</div>
+    <div id="meters"></div>
+
+    <div class="sechead">搜索状态</div>
+    <table>
+      <tr><td>g 已走代价</td><td id="sG">—</td></tr>
+      <tr><td>h 剩余估计</td><td id="sH">—</td></tr>
+      <tr><td>f = g + h</td><td id="sF">—</td></tr>
+      <tr><td>open 规模</td><td id="sOpen">—</td></tr>
+      <tr><td>总扩展数</td><td id="sTotal">—</td></tr>
+    </table>
+
+    <div id="note">拖拽旋转 · 右键平移 · 滚轮缩放</div>
+  </section>
+
+</main>
+
+<script>
+"use strict";
+/* =========================================================================
+   模板驾驶舱 —— 单文件前端，不依赖任何外部脚本。
+   Python 端只提供 /api/plan、/api/step、/api/meta 三个 JSON 接口。
+   ========================================================================= */
+
+/* ---------------------------------------------------------------- 工具 */
+const $ = (id) => document.getElementById(id);
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+const sub = (a, b) => [a[0]-b[0], a[1]-b[1], a[2]-b[2]];
+const dot = (a, b) => a[0]*b[0] + a[1]*b[1] + a[2]*b[2];
+const cross = (a, b) => [
+  a[1]*b[2] - a[2]*b[1],
+  a[2]*b[0] - a[0]*b[2],
+  a[0]*b[1] - a[1]*b[0],
+];
+const unit = (a) => {
+  const n = Math.hypot(a[0], a[1], a[2]) || 1;
+  return [a[0]/n, a[1]/n, a[2]/n];
+};
+
+/* ---------------------------------------------------------------- 相机 */
+const view = {
+  yaw: 0.7,
+  pitch: 0.55,
+  dist: 60,
+  focus: [16, 16, 7],
+  fov: 50 * Math.PI / 180,
+  near: 0.4,
+};
+
+function cameraBasis() {
+  const cp = Math.cos(view.pitch), sp = Math.sin(view.pitch);
+  const cy = Math.cos(view.yaw), sy = Math.sin(view.yaw);
+  const eye = [
+    view.focus[0] + view.dist * cp * sy,
+    view.focus[1] - view.dist * cp * cy,
+    view.focus[2] + view.dist * sp,
+  ];
+  const fwd = unit(sub(view.focus, eye));
+  const right = unit(cross(fwd, [0, 0, 1]));
+  const up = cross(right, fwd);
+  return { eye, fwd, right, up };
+}
+
+let W = 0, H = 0;
+
+function toScreen(p) {
+  const b = cameraBasis();
+  const d = sub(p, b.eye);
+  const z = dot(d, b.fwd);
+  if (z < view.near) return null;
+  const focal = (H / 2) / Math.tan(view.fov / 2);
+  const s = focal / z;
+  return [
+    W / 2 + dot(d, b.right) * s,
+    H / 2 - dot(d, b.up) * s,
+    z,
+  ];
+}
+
+/* ---------------------------------------------------------------- 状态 */
+const state = {
+  mode: "flight",
+  plan: null,
+  step: null,
+  frame: 0,
+  playing: false,
+  timer: null,
+  open: new Map(),
+  closed: [],
+  trail: 1,
+  drag: null,
+};
+
+/* ---------------------------------------------------------------- 画布 */
+const cv = $("gl");
+const ctx = cv.getContext("2d");
+
+function resize() {
+  const dpr = window.devicePixelRatio || 1;
+  const r = cv.getBoundingClientRect();
+  W = Math.max(1, r.width);
+  H = Math.max(1, r.height);
+  cv.width = Math.floor(W * dpr);
+  cv.height = Math.floor(H * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  requestDraw();
+}
+
+let drawQueued = false;
+function requestDraw() {
+  if (drawQueued) return;
+  drawQueued = true;
+  requestAnimationFrame(() => {
+    drawQueued = false;
+    paint();
+  });
+}
+
+/* ---------------------------------------------------------------- 图元 */
+/* 所有东西先收集成 {z, fn}，最后按 z 从大到小画（远的先画）。 */
+function makeBin() { return []; }
+
+function pushLine(bin, a, b, color, width, alpha) {
+  const pa = toScreen(a), pb = toScreen(b);
+  if (!pa || !pb) return;
+  bin.push({ z: (pa[2] + pb[2]) / 2, fn() {
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.beginPath();
+    ctx.moveTo(pa[0], pa[1]);
+    ctx.lineTo(pb[0], pb[1]);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }});
+}
+
+function pushFace(bin, pts, fill, stroke, alpha) {
+  const q = pts.map(toScreen);
+  if (q.some((v) => !v)) return;
+  let z = 0;
+  for (const v of q) z += v[2];
+  bin.push({ z: z / q.length, fn() {
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = fill;
+    ctx.beginPath();
+    ctx.moveTo(q[0][0], q[0][1]);
+    for (let i = 1; i < q.length; i++) ctx.lineTo(q[i][0], q[i][1]);
+    ctx.closePath();
+    ctx.fill();
+    if (stroke) {
+      ctx.strokeStyle = stroke;
+      ctx.lineWidth = 0.5;
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }});
+}
+
+const BOX_FACES = [
+  [0,1,2,3], [4,7,6,5], [0,4,5,1],
+  [1,5,6,2], [2,6,7,3], [3,7,4,0],
+];
+
+/* 半透明"幽灵盒"：用于禁飞区。
+   只画 6 个面（极低 alpha）+ 12 条棱（较亮），
+   这样能看出体积边界，又不会挡住里面的路径。 */
+/* 半透明"幽灵盒"：用于横向禁飞带。
+   6 个极低 alpha 的面 + 12 条可见棱，能看出体积又不挡视线。 */
+function pushGhostBox(bin, lo, hi, tint, edge, faceAlpha, edgeAlpha) {
+  const v = [
+    [lo[0],lo[1],lo[2]], [hi[0],lo[1],lo[2]], [hi[0],hi[1],lo[2]], [lo[0],hi[1],lo[2]],
+    [lo[0],lo[1],hi[2]], [hi[0],lo[1],hi[2]], [hi[0],hi[1],hi[2]], [lo[0],hi[1],hi[2]],
+  ];
+  for (const f of BOX_FACES) {
+    pushFace(bin, f.map((j) => v[j]), tint, null, faceAlpha);
+  }
+  const edges = [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]];
+  for (const [a, b] of edges) {
+    pushLine(bin, v[a], v[b], edge, 1.2, edgeAlpha);
+  }
+}
+
+/* 玻璃天花板：顶部禁飞层专用。
+   不画封闭盒体，只画：
+     * 底面上的一层网格（表示"可飞到这里为止"）
+     * 四个角柱（表示高度）
+     * 顶面边框（虚线感，用低 alpha 细线）
+   这样视线能穿透看到里面的路径，同时清楚知道上面是禁区。 */
+/* 玻璃天花板：顶部禁飞层。
+   要做到"看得见是天花板，但又能透视看里面"，靠三层：
+     1. 一块半透明填充面（alpha 0.10）—— 提供"面"的实体感
+     2. 底面上更密的网格线（alpha 0.30）—— 提供"顶棚"的视觉纹理
+     3. 四周边框加粗 + 四根角柱 —— 提供体积和高度感
+   关键是填充面必须足够淡（<=0.12），否则会遮住下面的路径。 */
+function pushGlassCeiling(bin, lo, hi, tint, edge) {
+  const x0 = lo[0], x1 = hi[0];
+  const y0 = lo[1], y1 = hi[1];
+  const z0 = lo[2], z1 = hi[2];
+
+  const c00 = [x0, y0, z0], c10 = [x1, y0, z0];
+  const c11 = [x1, y1, z0], c01 = [x0, y1, z0];
+
+  // 1) 底面半透明填充（这是"玻璃"的主体）
+  pushFace(bin, [c00, c10, c11, c01], tint, null, 0.10);
+
+  // 2) 底面网格 6x6，给"顶棚"纹理
+  const N = 6;
+  for (let i = 0; i <= N; i++) {
+    const t = i / N;
+    const x = x0 + (x1 - x0) * t;
+    const y = y0 + (y1 - y0) * t;
+    pushLine(bin, [x, y0, z0], [x, y1, z0], tint, 1, 0.30);
+    pushLine(bin, [x0, y, z0], [x1, y, z0], tint, 1, 0.30);
+  }
+
+  // 3) 底面边框：明显加粗，一眼看出这是"顶"
+  const bottom = [c00, c10, c11, c01];
+  for (let i = 0; i < 4; i++) {
+    pushLine(bin, bottom[i], bottom[(i + 1) % 4], edge, 2.6, 0.85);
+  }
+
+  // 4) 四根角柱：从底面升到顶面，表达"厚度"
+  for (const [cx, cy] of [[x0,y0], [x1,y0], [x1,y1], [x0,y1]]) {
+    pushLine(bin, [cx, cy, z0], [cx, cy, z1], edge, 1.6, 0.55);
+  }
+
+  // 5) 顶面边框 + 极淡填充：闭合体积感
+  const t00 = [x0, y0, z1], t10 = [x1, y0, z1];
+  const t11 = [x1, y1, z1], t01 = [x0, y1, z1];
+  pushFace(bin, [t00, t10, t11, t01], tint, null, 0.05);
+  const top = [t00, t10, t11, t01];
+  for (let i = 0; i < 4; i++) {
+    pushLine(bin, top[i], top[(i + 1) % 4], edge, 1.4, 0.30);
+  }
+
+  // 6) 四条竖直侧棱的淡填充（可选，让体积更明显）
+  for (const [a, b] of [[c00, c10], [c10, c11], [c11, c01], [c01, c00]]) {
+    pushFace(bin, [a, b, [b[0], b[1], z1], [a[0], a[1], z1]], tint, null, 0.035);
+  }
+}
+
+function pushBox(bin, lo, hi, topFill, sideFill, edge) {
+  const v = [
+    [lo[0],lo[1],lo[2]], [hi[0],lo[1],lo[2]], [hi[0],hi[1],lo[2]], [lo[0],hi[1],lo[2]],
+    [lo[0],lo[1],hi[2]], [hi[0],lo[1],hi[2]], [hi[0],hi[1],hi[2]], [lo[0],hi[1],hi[2]],
+  ];
+  BOX_FACES.forEach((f, i) => {
+    pushFace(bin, f.map((j) => v[j]), i === 1 ? topFill : sideFill, edge, 0.82);
+  });
+}
+
+function pushBall(bin, c, r) {
+  const pc = toScreen(c);
+  if (!pc) return;
+  const pe = toScreen([c[0] + r, c[1], c[2]]);
+  const rad = pe ? Math.max(2.5, Math.abs(pe[0] - pc[0])) : 3;
+  bin.push({ z: pc[2], fn() {
+    const g = ctx.createRadialGradient(
+      pc[0] - rad * 0.3, pc[1] - rad * 0.35, 1, pc[0], pc[1], rad);
+    g.addColorStop(0, "#ffe0a3");
+    g.addColorStop(0.6, "#e08a3c");
+    g.addColorStop(1, "#7a3a1c");
+    ctx.fillStyle = g;
+    ctx.globalAlpha = 0.92;
+    ctx.beginPath();
+    ctx.arc(pc[0], pc[1], rad, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }});
+}
+
+function pushTube(bin, ob) {
+  const n = 14, top = [], bot = [];
+  for (let i = 0; i < n; i++) {
+    const a = i * Math.PI * 2 / n;
+    const x = ob.center_xy[0] + Math.cos(a) * ob.radius;
+    const y = ob.center_xy[1] + Math.sin(a) * ob.radius;
+    top.push([x, y, ob.z_max]);
+    bot.push([x, y, ob.z_min]);
+  }
+  for (let i = 0; i < n; i++) {
+    pushFace(bin, [bot[i], bot[(i + 1) % n], top[(i + 1) % n], top[i]],
+             "#a55c2c", "#e8a862", 0.78);
+  }
+  pushFace(bin, top, "#d98f3c", "#f3c078", 0.82);
+}
+
+function pushDot(bin, p, color, size, alpha) {
+  const q = toScreen(p);
+  if (!q) return;
+  bin.push({ z: q[2], fn() {
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(q[0], q[1], size / 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }});
+}
+
+function pushPolyline(bin, path, color, width, alpha, limit) {
+  const end = Math.min(path.length, limit === undefined ? path.length : limit);
+  for (let i = 1; i < end; i++) {
+    pushLine(bin, path[i - 1], path[i], color, width, alpha);
+  }
+}
+
+/* ---------------------------------------------------------------- 底座 */
+function buildScene(bin, d) {
+  const o = d.bounds.origin, m = d.bounds.maximum;
+
+  // 地面网格
+  const N = 10;
+  for (let i = 0; i <= N; i++) {
+    const t = i / N;
+    const x = o[0] + (m[0] - o[0]) * t;
+    const y = o[1] + (m[1] - o[1]) * t;
+    pushLine(bin, [x, o[1], o[2]], [x, m[1], o[2]], "#254a63", 1, 0.35);
+    pushLine(bin, [o[0], y, o[2]], [m[0], y, o[2]], "#254a63", 1, 0.35);
+  }
+
+  // 包围盒 12 条棱
+  const c = [
+    [o[0],o[1],o[2]], [m[0],o[1],o[2]], [m[0],m[1],o[2]], [o[0],m[1],o[2]],
+    [o[0],o[1],m[2]], [m[0],o[1],m[2]], [m[0],m[1],m[2]], [o[0],m[1],m[2]],
+  ];
+  const edges = [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]];
+  for (const [a, b] of edges) pushLine(bin, c[a], c[b], "#2c5b78", 1, 0.28);
+
+  // 禁飞区（半透明，先画，让实体障碍盖在上面）
+  const nf = d.no_fly;
+  if (nf && nf.zones) {
+    for (const z of nf.zones) {
+      if (z.kind === "top") {
+        // 顶部禁飞层 -> 玻璃天花板：不封闭，视线可穿透
+        pushGlassCeiling(bin, z.minimum, z.maximum, "#ff6b7a", "#ff8a99");
+      } else {
+        // 横向禁飞带 -> 半透明幽灵盒
+        pushGhostBox(bin, z.minimum, z.maximum, "#ffb454", "#ffd08a", 0.06, 0.42);
+      }
+    }
+  }
+
+  // 障碍
+  const geo = d.obstacles_geometry || [];
+  if (geo.length) {
+    for (const ob of geo) {
+      if (ob.type === "box") pushBox(bin, ob.minimum, ob.maximum, "#e0a055", "#a8622f", "#f2c078");
+      else if (ob.type === "sphere") pushBall(bin, ob.center, ob.radius);
+      else if (ob.type === "cylinder") pushTube(bin, ob);
+    }
+  } else {
+    const s = (d.bounds.resolution || 1) * 0.92;
+    for (const p of d.obstacles || []) {
+      pushBox(bin, [p[0]-s/2, p[1]-s/2, p[2]-s/2], [p[0]+s/2, p[1]+s/2, p[2]+s/2],
+              "#e0a055", "#a8622f", "#f2c078");
+    }
+  }
+}
+
+/* ---------------------------------------------------------------- 绘制 */
+function paint() {
+  ctx.clearRect(0, 0, W, H);
+  if (!W || !H) return;
+
+  const bin = makeBin();
+  let title = "";
+
+  if (state.mode === "flight" && state.plan) {
+    const d = state.plan;
+    buildScene(bin, d);
+
+    for (const p of d.paths || []) pushPolyline(bin, p, "#35d0ff", 6, 0.12);
+    for (const p of d.paths || []) pushPolyline(bin, p, "#9beeff", 2, 0.95);
+
+    const tr = d.trajectories || [];
+    const lim = tr.length
+      ? Math.max(2, Math.round((tr[0].length - 1) * state.trail) + 1)
+      : 0;
+    for (const p of tr) pushPolyline(bin, p, "#3ddc97", 3.5, 0.18, lim);
+    for (const p of tr) pushPolyline(bin, p, "#a8ffd8", 1.3, 0.85, lim);
+
+    for (const p of d.starts || []) pushDot(bin, p, "#35d0ff", 11, 1);
+    for (const p of d.goals || []) pushDot(bin, p, "#ff6b7a", 9, 1);
+
+    title = "飞行演示";
+  } else if (state.mode === "search" && state.step) {
+    const d = state.step;
+    buildScene(bin, d);
+
+    // closed（抽样）
+    const cl = state.closed;
+    const maxShow = 1800;
+    const stride = Math.max(1, Math.ceil(cl.length / maxShow));
+    for (let i = 0; i < cl.length; i += stride) pushDot(bin, cl[i], "#3f7fd0", 3.5, 0.45);
+
+    // open
+    for (const v of state.open.values()) pushDot(bin, v.p, "#ffb454", 4, 0.9);
+
+    // 当前节点
+    if (state.frame > 0) {
+      const f = d.frames[state.frame - 1];
+      if (f && f.cur) pushDot(bin, f.cur, "#ffffff", 8, 1);
+    }
+
+    pushDot(bin, d.start, "#35d0ff", 11, 1);
+    pushDot(bin, d.goal, "#ff6b7a", 9, 1);
+
+    if (state.frame >= d.frames.length && d.path.length) {
+      pushPolyline(bin, d.path, "#35d0ff", 6, 0.12);
+      pushPolyline(bin, d.path, "#9beeff", 2, 0.95);
+    }
+    title = "搜索过程";
+  } else {
+    ctx.fillStyle = "#2a4557";
+    ctx.font = "13px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("点「运行实验」生成场景", W / 2, H / 2);
+    return;
+  }
+
+  bin.sort((a, b) => b.z - a.z);
+  for (const item of bin) item.fn();
+
+  // 角落文字
+  ctx.textAlign = "left";
+  ctx.font = "11px ui-monospace,Consolas,monospace";
+  ctx.fillStyle = "#4d7a94";
+  ctx.fillText(
+    title + "  yaw=" + view.yaw.toFixed(2) + "  pitch=" + view.pitch.toFixed(2) +
+    "  dist=" + view.dist.toFixed(1), 12, H - 10);
+}
+
+/* ---------------------------------------------------------------- 场景适配 */
+function fitView(bounds) {
+  const o = bounds.origin, m = bounds.maximum;
+  view.focus = [(o[0]+m[0])/2, (o[1]+m[1])/2, o[2] + (m[2]-o[2])*0.5];
+  const span = Math.max(m[0]-o[0], m[1]-o[1], m[2]-o[2]);
+  view.dist = span * 2.2;
+  view.yaw = 0.7;
+  view.pitch = 0.55;
+  requestDraw();
+}
+
+/* ---------------------------------------------------------------- 交互 */
+cv.addEventListener("pointerdown", (e) => {
+  state.drag = {
+    mode: (e.button !== 0 || e.shiftKey) ? "pan" : "orbit",
+    x: e.clientX,
+    y: e.clientY,
+  };
+  cv.classList.add("dragging");
+  cv.setPointerCapture(e.pointerId);
+});
+
+cv.addEventListener("pointermove", (e) => {
+  if (!state.drag) return;
+  const dx = e.clientX - state.drag.x;
+  const dy = e.clientY - state.drag.y;
+  state.drag.x = e.clientX;
+  state.drag.y = e.clientY;
+
+  if (state.drag.mode === "orbit") {
+    view.yaw += dx * 0.007;
+    // 竖直方向必须真的改变俯仰角；夹紧防止退化
+    view.pitch = clamp(view.pitch + dy * 0.007, 0.02, 1.50);
+  } else {
+    const b = cameraBasis();
+    const k = view.dist * 0.0022;
+    view.focus = [
+      view.focus[0] - b.right[0]*dx*k + b.up[0]*dy*k,
+      view.focus[1] - b.right[1]*dx*k + b.up[1]*dy*k,
+      view.focus[2] - b.right[2]*dx*k + b.up[2]*dy*k,
+    ];
+  }
+  requestDraw();
+});
+
+cv.addEventListener("pointerup", () => {
+  state.drag = null;
+  cv.classList.remove("dragging");
+});
+
+cv.addEventListener("pointercancel", () => {
+  state.drag = null;
+  cv.classList.remove("dragging");
+});
+
+cv.addEventListener("wheel", (e) => {
+  e.preventDefault();
+  view.dist = clamp(view.dist * Math.exp(e.deltaY * 0.0011), 1, 600);
+  requestDraw();
+}, { passive: false });
+
+cv.addEventListener("dblclick", () => {
+  const d = state.mode === "search" ? state.step : state.plan;
+  if (d) fitView(d.bounds);
+});
+
+window.addEventListener("keydown", (e) => {
+  if (e.key === "ArrowLeft") view.yaw -= 0.08;
+  else if (e.key === "ArrowRight") view.yaw += 0.08;
+  else if (e.key === "ArrowUp") view.pitch = clamp(view.pitch - 0.06, 0.02, 1.50);
+  else if (e.key === "ArrowDown") view.pitch = clamp(view.pitch + 0.06, 0.02, 1.50);
+  else if (e.key === "+" || e.key === "=") view.dist *= 0.9;
+  else if (e.key === "-") view.dist *= 1.1;
+  else return;
+  requestDraw();
+});
+
+/* ---------------------------------------------------------------- 视角按钮 */
+const CAM_PRESETS = {
+  iso:   { yaw: 0.70, pitch: 0.55 },
+  top:   { yaw: 0.70, pitch: 1.48 },
+  front: { yaw: 0.00, pitch: 0.16 },
+  side:  { yaw: Math.PI / 2, pitch: 0.16 },
+};
+document.querySelectorAll("#cameras button").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const key = btn.dataset.cam;
+    if (key === "reset") {
+      const d = state.mode === "search" ? state.step : state.plan;
+      if (d) fitView(d.bounds);
+      return;
+    }
+    const p = CAM_PRESETS[key];
+    if (p) {
+      view.yaw = p.yaw;
+      view.pitch = p.pitch;
+      requestDraw();
+    }
+  });
+});
+
+/* ---------------------------------------------------------------- 模式切换 */
+function setMode(m) {
+  state.mode = m;
+  document.querySelectorAll("#tabs button").forEach((b) => {
+    b.classList.toggle("on", b.dataset.mode === m);
+  });
+  $("stepbar").style.display = m === "search" ? "flex" : "none";
+  $("ablationPanel").style.display = m === "ablation" ? "block" : "none";
+  $("legend").innerHTML = m === "search"
+    ? '<div><i class="sw" style="background:#ffb454"></i>open 待探索</div>' +
+      '<div><i class="sw" style="background:#3f7fd0"></i>closed 已扩展</div>' +
+      '<div><i class="sw" style="background:#ffffff"></i>当前节点</div>' +
+      '<div><i class="sw" style="background:#35d0ff"></i>起点</div>' +
+      '<div><i class="sw" style="background:#ff6b7a"></i>终点</div>'
+    : '<div><i class="sw" style="background:#35d0ff"></i>规划路径</div>' +
+      '<div><i class="sw" style="background:#3ddc97"></i>执行轨迹</div>' +
+      '<div><i class="sw" style="background:#e0a055"></i>障碍</div>';
+
+  if (m === "search") loadStep();
+  else if (m === "ablation") { }
+  else if (state.plan) requestDraw();
+}
+
+document.querySelectorAll("#tabs button").forEach((b) => {
+  b.addEventListener("click", () => setMode(b.dataset.mode));
+});
+
+/* ---------------------------------------------------------------- 单步播放 */
+function stopPlay() {
+  if (state.timer) { clearInterval(state.timer); state.timer = null; }
+  state.playing = false;
+  $("sbPlay").textContent = "▶ 播放";
+}
+
+function applyFrame(f) {
+  for (const o of f.open) {
+    const key = o[0] + "," + o[1] + "," + o[2];
+    state.open.set(key, { p: [o[0], o[1], o[2]], f: o[3] });
+  }
+  for (const c of f.close) {
+    state.open.delete(c[0] + "," + c[1] + "," + c[2]);
+    state.closed.push(c);
+  }
+}
+
+function seek(n) {
+  const d = state.step;
+  if (!d) return;
+  n = clamp(n, 0, d.frames.length);
+
+  if (n < state.frame) {
+    state.open.clear();
+    state.closed.length = 0;
+    for (let i = 0; i < n; i++) applyFrame(d.frames[i]);
+  } else {
+    for (let i = state.frame; i < n; i++) applyFrame(d.frames[i]);
+  }
+  state.frame = n;
+
+  // 更新播放条
+  $("sbRange").max = d.frames.length;
+  $("sbRange").value = n;
+  $("sbLabel").textContent = n + " / " + d.frames.length;
+
+  // 更新读数
+  const f = n > 0 ? d.frames[n - 1] : null;
+  if (f && f.curinfo) {
+    $("sG").textContent = f.curinfo.g;
+    $("sH").textContent = f.curinfo.h;
+    $("sF").textContent = f.curinfo.f;
+    $("sOpen").textContent = f.osize;
+  } else {
+    $("sG").textContent = "—";
+    $("sH").textContent = "—";
+    $("sF").textContent = "—";
+    $("sOpen").textContent = "—";
+  }
+  $("sTotal").textContent = d.total_expanded.toLocaleString();
+
+  requestDraw();
+}
+
+$("sbFirst").onclick = () => { stopPlay(); seek(0); };
+$("sbPrev").onclick = () => { stopPlay(); seek(state.frame - 1); };
+$("sbNext").onclick = () => { stopPlay(); seek(state.frame + 1); };
+$("sbLast").onclick = () => { stopPlay(); seek(state.step ? state.step.frames.length : 0); };
+$("sbRange").oninput = (e) => { stopPlay(); seek(Number(e.target.value)); };
+$("sbPlay").onclick = () => {
+  const d = state.step;
+  if (!d) return;
+  if (state.playing) { stopPlay(); return; }
+  if (state.frame >= d.frames.length) seek(0);
+  state.playing = true;
+  $("sbPlay").textContent = "⏸ 暂停";
+  state.timer = setInterval(() => {
+    if (state.frame >= d.frames.length) { stopPlay(); return; }
+    seek(state.frame + 2);
+  }, 60);
+};
+
+/* ---------------------------------------------------------------- 状态提示 */
+function setStatus(text, kind) {
+  $("statusText").textContent = text;
+  const pill = $("statusPill");
+  pill.className = "pill" + (kind ? " " + kind : "");
+}
+
+/* ---------------------------------------------------------------- 数据请求 */
+function query() {
+  return new URLSearchParams({
+    map: $("mapSel").value,
+    algorithm: $("algoSel").value,
+    shape: $("shapeSel").value,
+    heuristic: $("heurSel").value,
+    diagonal: $("diagChk").checked ? "1" : "0",
+    smooth: $("smoothChk").checked ? "1" : "0",
+    seed: $("seedRng").value,
+    uavs: $("uavRng").value,
+    obstacles: $("obsRng").value,
+    hard: $("hardRng").value,
+  });
+}
+
+async function loadPlan() {
+  const btn = $("go");
+  btn.disabled = true;
+  btn.textContent = "计算中…";
+  setStatus("正在规划…", "");
+  $("hint").style.display = "none";
+
+  try {
+    const res = await fetch("/api/plan?" + query());
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.error || "规划失败");
+
+    state.plan = d;
+    fitView(d.bounds);
+    showMetrics(d);
+
+    // 右上角状态必须反映"当前选的是哪个变体"，否则切换算法后看不出变化
+    const algoLabel = $("algoSel").selectedOptions[0]
+      ? $("algoSel").selectedOptions[0].textContent.trim()
+      : d.controls.algorithm;
+    const totalExp = (d.results || []).reduce((a, r) => a + (r.expanded || 0), 0);
+    setStatus(algoLabel + " · " + totalExp.toLocaleString() + " 次扩展", "ok");
+    requestDraw();
+  } catch (err) {
+    setStatus("失败：" + err.message, "warn");
+    $("hint").style.display = "block";
+    $("hint").textContent = err.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "运行实验";
+  }
+}
+
+async function loadStep() {
+  setStatus("正在生成搜索过程…", "");
+  try {
+    const res = await fetch("/api/step?" + query());
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.error || "单步生成失败");
+
+    stopPlay();
+    state.step = d;
+    state.frame = 0;
+    state.open.clear();
+    state.closed.length = 0;
+    fitView(d.bounds);
+    seek(0);
+
+    const name = d.heuristic === "zero" ? "Dijkstra" : "A*";
+    setStatus(name + " · 共 " + d.total_expanded.toLocaleString() + " 次扩展", "ok");
+    requestDraw();
+  } catch (err) {
+    setStatus("失败：" + err.message, "warn");
+  }
+}
+
+/* ---------------------------------------------------------------- 指标 */
+function showMetrics(d) {
+  const p = d.metrics.plan || {};
+  const e = d.metrics.execution || {};
+
+  const num = (v, n) => (v === null || v === undefined) ? "—" : Number(v).toFixed(n === undefined ? 2 : n);
+  const pct = (v) => (v === null || v === undefined) ? "—" : (Number(v) * 100).toFixed(1) + "%";
+
+  $("kClear").textContent = num(p.min_clearance) + " m";
+  $("kLen").textContent = num(p.mean_path_length) + " m";
+  $("kExp").textContent = (d.results || []).reduce((a, r) => a + (r.expanded || 0), 0).toLocaleString();
+  $("kTime").textContent = num((d.timings || {}).planning, 3) + " s";
+
+  const violated = p.clearance_violation || e.clearance_violation;
+  $("kClear").className = violated ? "bad" : "ok";
+
+  $("tPs").textContent = pct(p.success_rate);
+  $("tEs").textContent = pct(e.success_rate);
+  $("tEc").textContent = num(e.min_clearance) + " m";
+  $("tSep").textContent = num(e.min_separation) + " m";
+  $("tSm").textContent = num(e.mean_smoothness, 3);
+
+  const bars = [
+    ["到达率", p.success_rate],
+    ["净空余量", clamp((p.min_clearance || 0) / (p.hard_clearance || 0.35), 0, 1)],
+    ["路径效率", clamp(1 / Math.max(p.mean_path_ratio || 1, 1), 0, 1)],
+  ];
+  $("meters").innerHTML = bars.map(([label, v]) => {
+    const w = Math.max(2, (v || 0) * 100);
+    return '<div class="meter"><div class="top"><span>' + label +
+           '</span><span>' + pct(v) + '</span></div>' +
+           '<div class="bar"><i style="width:' + w + '%"></i></div></div>';
+  }).join("");
+
+  $("note").textContent =
+    d.scenario.layout + " 场景 · " + d.controls.algorithm + " · " +
+    d.controls.uavs + " 架 UAV · " + d.scenario.obstacles + " 个障碍。" +
+    (violated ? " ⚠ 净空约束未守住。" : " 规划层与执行层均满足硬净空约束。");
+}
+
+/* ---------------------------------------------------------------- 滑块标签 */
+const SLIDERS = [
+  ["seedRng", "seedVal", (v) => v],
+  ["uavRng", "uavVal", (v) => v],
+  ["obsRng", "obsVal", (v) => v],
+  ["hardRng", "hardVal", (v) => Number(v).toFixed(2)],
+];
+for (const [rng, lbl, fmt] of SLIDERS) {
+  const r = $(rng), l = $(lbl);
+  r.addEventListener("input", () => { l.textContent = fmt(r.value); });
+  l.textContent = fmt(r.value);
+}
+
+/* ---------------------------------------------------------------- 控件变更 */
+$("go").addEventListener("click", () => {
+  if (state.mode === "search") loadStep();
+  else loadPlan();
+});
+
+["mapSel", "algoSel", "shapeSel", "heurSel", "diagChk", "smoothChk",
+ "seedRng", "uavRng", "obsRng", "hardRng"].forEach((id) => {
+  $(id).addEventListener("change", () => {
+    if (state.mode === "search") loadStep();
+    else loadPlan();
+  });
+});
+
+/* ---------------------------------------------------------------- 元数据 */
+async function loadMeta() {
+  try {
+    const res = await fetch("/api/meta");
+    const m = await res.json();
+
+    $("mapSel").innerHTML = m.maps
+      .map((x) => '<option value="' + x.name + '">' + x.label + "</option>").join("");
+
+    $("algoSel").innerHTML = m.algorithms
+      .map((x) => '<option value="' + x.name + '">' + x.label + "</option>").join("");
+
+    $("shapeSel").innerHTML = m.shapes.map((s) => {
+      const v = s.join("x");
+      const tag = s[0] <= 24 ? "快速" : s[0] >= 40 ? "精细" : "标准";
+      const sel = v === "32x32x14" ? " selected" : "";
+      return '<option value="' + v + '"' + sel + ">" + s.join("×") + " · " + tag + "</option>";
+    }).join("");
+  } catch (err) {
+    console.warn("meta 加载失败", err);
+  }
+}
+
+/* ---------------------------------------------------------------- 启动 */
+window.addEventListener("resize", resize);
+
+/* ---------------------------------------------------------------- 消融实验 */
+function renderAblation(rep) {
+  const tb = $("abBody");
+  const rows = rep.rows || [];
+  if (!rows.length) {
+    tb.innerHTML = "<tr><td colspan=7 class=ab-empty>无结果</td></tr>";
+    return;
+  }
+  const okRows = rows.filter((r) => r.success);
+  const minRaw = Math.min(...okRows.map((r) => r.raw_path_length));
+  const maxRawClr = Math.max(...okRows.map((r) => r.raw_min_clearance));
+
+  tb.innerHTML = rows.map((r) => {
+    if (!r.success) {
+      return "<tr><td>" + r.variant +
+        "</td><td colspan=6 class=bad>失败: " + (r.error || "") + "</td></tr>";
+    }
+    const isFull = r.variant === "full";
+    const rawLenCls = r.raw_path_length <= minRaw + 1e-6 ? "ok" : "";
+    const rawClrCls = r.raw_min_clearance >= maxRawClr - 1e-6 ? "ok" : "";
+    const vCls = r.raw_clearance_violation ? "bad" : "ok";
+    const vTxt = r.raw_clearance_violation ? "是" : "否";
+    return "<tr class=" + (isFull ? "full" : "") + ">" +
+      "<td>" + r.variant + "</td>" +
+      "<td class=" + rawLenCls + ">" + r.raw_path_length.toFixed(2) + "</td>" +
+      "<td class=" + rawClrCls + ">" + r.raw_min_clearance.toFixed(2) + "</td>" +
+      "<td>" + r.path_length.toFixed(2) + "</td>" +
+      "<td>" + r.min_clearance.toFixed(2) + "</td>" +
+      "<td>" + Math.round(r.expanded) + "</td>" +
+      "<td class=" + vCls + ">" + vTxt + "</td>" +
+      "</tr>";
+  }).join("");
+
+  $("abSub").textContent =
+    rep.map + " · " + rep.n_uavs + " 架 · seeds=" + rep.seeds.join(",");
+}
+
+async function runAblation() {
+  const btn = $("abRun");
+  btn.disabled = true;
+  btn.textContent = "计算中…";
+  $("abBody").innerHTML = "<tr><td colspan=7 class=ab-empty>正在跑多个变体，请稍候…</td></tr>";
+  try {
+    const q = new URLSearchParams(query());
+    q.set("seeds", $("seedRng").value);
+    const res = await fetch("/api/ablation?" + q);
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.error || "消融失败");
+    renderAblation(d);
+    setStatus("消融完成", "ok");
+  } catch (e) {
+    setStatus("消融失败：" + e.message, "warn");
+    $("abBody").innerHTML = "<tr><td colspan=6 class=bad>" + e.message + "</td></tr>";
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "运行消融";
+  }
+}
+
+$("abRun").addEventListener("click", runAblation);
+$("abClose").addEventListener("click", () => setMode("flight"));
+
+(async function boot() {
+  setMode("flight");
+  await loadMeta();
+  resize();
+  await loadPlan();
+  if (state.plan) fitView(state.plan.bounds);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,1168 @@
+总页数: 12
+
+======================================================================
+########## 第 1 页 ##########
+Contents lists available at ScienceDirect
+Expert Systems With Applications
+journal homepage: www.elsevier.com/locate/eswa
+AGP-MADDPG: A* Guidance Point based Multi-Agent Deep Deterministic 
+Policy Gradient for 3D cooperative multi-UAV trajectory planning
+Hui Wang
+ ∗, Xiaolei Sun
+ , Yang Liu, Chaoxu Mu
+School of Artiﬁcial Intelligence, and Anhui Provincial Key Laboratory of Security Artiﬁcial Intelligence, Anhui University, Hefei, Anhui, China
+a r t i c l e  i n f o
+Keywords:
+Trajectory planning
+Deep reinforcement learning
+Multi-agent cooperation
+Attention mechanism
+ a b s t r a c t
+Cooperative trajectory planning for multi unmanned aerial vehicle (multi-UAV) systems in three-dimensional 
+(3D) environments is hindered by sparse rewards, long-horizon decision making, and unstable inter-agent coor-
+dination. To address these issues, an A* Guidance Point based Multi-Agent Deep Deterministic Policy Gradient 
+(AGP-MADDPG) framework is developed, which integrates planning-based prior guidance with attention-based 
+value estimation. In this framework, an improved A* planner with multi-objective constraints generates global 
+reference paths by jointly considering path length, safety margin, and inter-UAV separation. Subsequently, dy-
+namic guidance points are constructed along the reference path according to the UAVs’ positions, converting 
+sparse feedback into dense guidance rewards to enhance exploration eﬃciency and training stability. To miti-
+gate input dimensionality explosion and irrelevant interaction noise in the centralized critic, we incorporate a 
+multi-head self-attention module. This module adaptively aggregates cross-agent information, improving both ac-
+curacy and scalability of value estimation. Simulations in basic and extended scenarios show that AGP-MADDPG 
+consistently outperforms baselines in convergence speed, mission success rate, decision eﬃciency, and trajectory 
+quality, demonstrating its eﬀectiveness and robustness in cooperative multi-UAV trajectory planning.
+1.  Introduction
+Multi-Unmanned Aerial Vehicle (multi-UAV) trajectory planning and 
+cooperative control play a pivotal role in various missions such as air-
+ground coordination, emergency rescue, warehouse logistics, and large-
+scale monitoring tasks (Cao et al., 2024). The core challenge lies in
+simultaneously achieving safe obstacle avoidance and eﬃcient goal nav-
+igation within a three-dimensional (3D) space constrained by obstacles 
+and multi-agent interactions. Traditional path planning methods, in-
+cluding the A* algorithm, Rapidly-exploring Random Trees (RRT), and 
+Artiﬁcial Potential Fields (APF), typically possess clear geometric inter-
+pretability and global reachability (Debnath et al., 2024). Nevertheless, 
+these methods often struggle with high-dimensional dynamics and envi-
+ronmental uncertainties, and their dependence on complex mathemati-
+cal modeling may limit real-time performance in cluttered and dynamic 
+multi-UAV scenarios (Darlan et al., 2025).
+Conversely, Westheider et al. (2023) pointed out that deep reinforce-
+ment learning (DRL) can achieve strong adaptability in continuous con-
+trol and dynamic environments, making it a popular choice for UAV 
+navigation and trajectory planning. However, as noted by Kong et al. 
+(2024), end-to-end reinforcement learning often suﬀers from ineﬃcient 
+exploration, unstable convergence, and safety violations in long-horizon 
+∗ Corresponding author.
+ E-mail addresses: h.wang.13@ahu.edu.cn (H. Wang), w125221224@stu.ahu.edu.cn (X. Sun), wa24201028@stu.ahu.edu.cn (Y. Liu), cxmu@tju.edu.cn (C. Mu).
+tasks with sparse rewards and delayed credit assignment. This challenge 
+is particularly pronounced in cluttered 3D multi-UAV trajectory plan-
+ning, where agents must simultaneously learn obstacle avoidance, goal 
+reaching, and cooperative conﬂict resolution. To address these chal-
+lenges, hybrid planning-learning approaches have gradually become an 
+eﬀective pathway for multi-agent trajectory planning. For instance, Yo-
+netani et al. (2021) utilized planning to provide reachability and topo-
+logical priors, while employing learning policies for local continuous 
+control and dynamic obstacle avoidance, thereby transforming long-
+horizon problems into more learnable local decision-making problems. 
+Beyond structural hybridization, the design of training reward signals 
+is equally critical to the success of long-horizon trajectory planning 
+tasks. Regarding reward shaping, Schubert et al. (2021) utilized ap-
+proximate plan information to construct dense reward functions to ac-
+celerate learning, while Devidze et al. (2022) leveraged self-supervised 
+exploration to learn intrinsic shaping rewards, thereby enhancing sam-
+ple eﬃciency in environments with extremely sparse rewards. In terms 
+of curriculum learning and goal-conditioned RL, Kim et al. (2024) al-
+leviated the long-term credit assignment problem by progressively in-
+creasing task diﬃculty from simple to complex or introducing sub-goal
+sequences, thereby enhancing the success rate and controllability of 
+complex navigation tasks.
+https://doi.org/10.1016/j.eswa.2026.134264
+Received 7 May 2026; Received in revised form 31 August 2026; Accepted 1 September 2026
+Expert Systems With Applications 333 (2027) 134264 
+Available online 2 September 2026 
+0957-4174/© 2026 The Author(s). Published by Elsevier Ltd. This is an open access article under the CC BY license ( http://creativecommons.org/licenses/by/4.0/ ). 
+
+======================================================================
+########## 第 2 页 ##########
+H. Wang et al.
+Fig. 1. Overall framework of the proposed method for multi-UAV trajectory planning.
+In multi-agent reinforcement learning (MARL), Centralized Train-
+ing with Decentralized Execution (CTDE) has become a widely adopted 
+paradigm because it combines the training advantage of centralized 
+value estimation with the deployment ﬂexibility of decentralized poli-
+cies (Lowe et al., 2017). In this framework, each agent acts using only 
+local observations, while the centralized critic leverages cross-agent in-
+formation during training to facilitate value estimation and credit as-
+signment. As a result, the performance of CTDE heavily depends on 
+the critic design. Prior studies have shown that centralized critics are 
+closely related to the scalability and stability of cooperative MARL, and 
+that suitable optimization strategies can further improve convergence 
+behavior (Lyu et al., 2023; Yu et al., 2022). Nevertheless, the conven-
+tional MADDPG critic typically adopts direct concatenation of all agents’ 
+observations and actions, which is not well suited to cooperative multi-
+UAV trajectory planning. Such a design causes the critic input dimension 
+to grow rapidly with the number of agents, increasing the diﬃculty of 
+value approximation and reducing sample eﬃciency. Meanwhile, it fails 
+to explicitly diﬀerentiate the importance of inter-agent interactions, al-
+lowing redundant or irrelevant information to interfere with value es-
+timation. This limitation is especially pronounced in long-horizon tasks 
+with sparse rewards, where the critic must jointly model obstacle avoid-
+ance, target reaching, and inter-agent coordination, often leading to lim-
+ited stability and scalability.
+Based on the above analysis, we propose an A* Guidance Point 
+based Multi-Agent Deep Deterministic Policy Gradient framework (AGP-
+MADDPG) for cooperative multi-UAV trajectory planning in 3D simu-
+lated environments. As illustrated in Fig. 1, each agent receives local 
+observations 𝑜𝑖 from the environment and executes a decentralized actor 
+policy with Ornstein–Uhlenbeck (OU) noise for continuous exploration. 
+During training, AGP-MADDPG shapes dense guidance rewards based on 
+A* guidance points and employs a multi-head self-attention centralized 
+critic to adaptively aggregate cross-agent information for stable value 
+estimation. The main contributions of our work are summarized as fol-
+lows:
+• We design an improved A* based reference path generation module 
+for AGP-MADDPG, which incorporates multi-objective constraints to 
+provide structured and safe planning priors for cooperative multi-
+UAV learning.
+• We construct a dynamic guidance point mechanism based on the 
+reference path, which transforms sparse terminal rewards into dense 
+guidance signals to improve exploration eﬃciency and convergence 
+stability in long-horizon tasks.
+• We develop a multi-head self-attention centralized critic to selec-
+tively aggregate cross-agent information, reducing redundant inter-
+action noise and improving value-estimation stability and coopera-
+tive performance within the evaluated settings.
+2.  Related work
+2.1.  Planning prior guided trajectory planning
+In long-horizon trajectory planning, traditional algorithms oﬀer 
+global reachability but struggle with high-dimensional dynamics, 
+whereas end-to-end reinforcement learning (RL) often suﬀers from 
+sparse rewards and unstable convergence. To address these limitations, 
+hybrid approaches have become a prevailing paradigm, leveraging plan-
+ning to provide global topological priors while utilizing RL for local con-
+tinuous control (Yuan et al., 2023).
+Hierarchical frameworks typically decompose the tasks into manage-
+able sub-problems using graph structures or waypoints. Francis et al. 
+(2020) proposed Probabilistic Roadmap based Reinforcement Learning 
+(PRM-RL), combining Probabilistic Roadmap with learned local policies 
+to enhance long-distance navigability. To mitigate exploration ineﬃ-
+ciency, Kästner et al. (2021) transformed global guidance into traceable 
+sub-goal sequences, while Wang et al. (2024b) injected heuristic search 
+constraints directly into the policy search space to improve sample ef-
+ﬁciency. In multi-agent domains, such fusion is often integrated with 
+explicit safety constraints. For instance, Feng et al. (2025) introduced 
+a hierarchical framework integrating experience graphs and safe poli-
+cies to achieve scalable, collision-free navigation. In short, prior hybrid 
+methods mainly use planning outputs as discrete sub-goals for hierarchi-
+cal execution, whereas our approach uses the planned path as a prior 
+reference path to construct dynamic guidance points and dense reward 
+shaping for long-horizon multi-UAV learning.
+Focusing on control execution, Zhou et al. (2024) demonstrated that 
+modularizing navigation and collision avoidance behaviors enhances 
+both convergence stability and interpretability. For local trajectory plan-
+ning, Feiyu et al. (2024) utilized Twin Delayed Deep Deterministic
+Expert Systems With Applications 333 (2027) 134264 
+2 
+
+======================================================================
+########## 第 3 页 ##########
+H. Wang et al.
+Policy Gradient (TD3) based algorithms to ensure smooth control out-
+puts under dynamic constraints, and Vlachos et al. (2023) optimized 
+navigation costs via RL-regulated potential ﬁelds. These studies suggest 
+that waypoints and intermediate targets can serve as eﬀective sub-goal 
+priors, improving controllability and sample eﬃciency in long-horizon 
+tasks. In recent goal-conditioned MARL methods, such priors are often 
+generated by an additional high-level policy and then passed to lower-
+level agents for execution. By contrast, AGP-MADDPG does not intro-
+duce an extra policy hierarchy. The planning prior is used only to shape 
+rewards during training, while decentralized actors learn continuous 
+control directly from local observations.
+2.2.  Centralized critic and attention mechanisms
+While the CTDE paradigm is widely adopted in MARL, directly con-
+catenating the joint observations and actions in the critic often in-
+troduces interaction noise irrelevant to value estimation. Therefore,
+attention mechanisms have been widely used to adaptively weight and 
+aggregate inter-agent interactions (Iqbal & Sha, 2019). In dynamic en-
+vironments, attention-based methods have been proven eﬀective in en-
+hancing collaborative collision avoidance and information aggregation. 
+Guan et al. (2022) integrated attention with communication to improve 
+actor-critic learning in crowded scenarios, while Lin and Ma (2023) 
+leveraged heuristic trajectory information as attention-based guidance 
+signals. To address scalability, Wang et al. (2023) utilized improved 
+attention modules to enable eﬀective planning under limited ﬁelds of 
+view. Similarly, Zhao et al. (2024) leveraged the Graph Attention Net-
+work (GAT) to model neighbor contributions and multi-agent coupling 
+without explicitly expanding input dimensions.
+Furthermore, self-attention mechanisms have gradually become ef-
+fective tools for handling multi-agent interactions in MARL. Wen et al. 
+(2022) proposed the Multi-Agent Transformer (MAT), which frames 
+cooperative MARL as a sequence modeling problem, leveraging an 
+encoder–decoder attention mechanism for scalable interaction model-
+ing. Building on this, Wang et al. (2024a) proposed the Role-based 
+Multi-Agent Transformer (RoMAT), which introduced role modeling to 
+mitigate agent heterogeneity and improve generalization performance 
+across tasks. Focusing on value estimation, Li et al. (2024) and Zhao 
+et al. (2025) employed Transformer-based critics to serialize interaction 
+information, achieving stable value decomposition.
+Although attention mechanisms have been widely explored in MARL, 
+most existing studies focus on communication design, neighbor selec-
+tion, or general interaction modeling. By contrast, our objective is to 
+improve the centralized critic for long-horizon cooperative trajectory 
+planning, where the importance of other agents varies with relative dis-
+tance, obstacle layout, and ﬂight phase. To this end, we introduce a 
+self-attention-based critic to emphasize task-relevant interactions and 
+suppress redundant information during value estimation. Moreover, this 
+critic is integrated with dense reward shaping: the planning prior im-
+proves exploration under sparse rewards, while the attention mecha-
+nism enhances critic robustness and cross-agent information aggrega-
+tion. Therefore, the contribution of AGP-MADDPG lies not in adopting 
+attention alone, but in coupling attention-based value estimation with 
+planning-guided reward shaping for long-horizon 3D cooperative multi-
+UAV trajectory planning.
+3.  Method
+3.1.  Problem formulation
+Cooperative multi-UAV trajectory planning in 3D environments is 
+formulated as a multi-agent continuous control problem. The system 
+consists of 𝑁 UAVs, each of which selects a continuous action 𝑎𝑡𝑖 ∈ ℝ𝑑𝑎
+according to its local observation 𝑜𝑡𝑖 at each discrete time step 𝑡. Af-
+ter all agents execute the joint action 𝐚𝑡 = (𝑎𝑡1, …,𝑎𝑡𝑁 ), the environment 
+transitions to the next state and returns an individual reward 𝑟𝑡𝑖 to each 
+Fig. 2. Illustration of the 3D action space of each UAV agent. The action 𝑎𝑡𝑖 =
+[𝜃𝑡+1𝑖 ,𝜓 𝑡+1𝑖 ,𝜙𝑡+1𝑖 ] represents the commanded pitch, yaw, and roll angles for the 
+next step.
+UAV. In the considered setting, each UAV executes continuous attitude 
+control, and the action of agent 𝑖 is deﬁned as a 3D continuous vec-
+tor 𝑎𝑡𝑖 = [𝜃𝑡+1𝑖 ,𝜓 𝑡+1𝑖 ,𝜙𝑡+1𝑖 ] ∈ ℝ3, where 𝜃𝑡+1𝑖 , 𝜓𝑡+1𝑖 , and 𝜙𝑡+1𝑖  denote the 
+commanded pitch, yaw, and roll angles for the next step. To avoid ag-
+gressive attitude commands, each action dimension is constrained to 
+[−𝜋∕9, 𝜋∕9]. Similar angular constraints have been adopted in previous 
+UAV control studies, including attitude-control inputs bounded within 
+[−𝜋∕9, 𝜋∕9] in a quadrotor model (Hu et al., 2020) and the same control-
+command bound in an RL-based aircraft controller (Chai et al., 2023). 
+Motivated by these settings, we adopt the same bounded range for the 
+attitude commands rather than treating it as a mechanical limit. The 
+range is applied uniformly to the pitch, yaw, and roll command dimen-
+sions to maintain a consistent continuous action representation.
+As illustrated in Fig. 2, the action space is represented in the UAV 
+body coordinate system. This continuous attitude-control formulation 
+enables each UAV to adjust its ﬂight direction smoothly in 3D space, 
+which is suitable for trajectory planning and obstacle avoidance in the 
+evaluated environments. The local observation 𝑜𝑡𝑖 consists of: (i) the 
+UAV’s own position 𝑃UAV; (ii) the positions of other UAVs within a com-
+munication radius 𝑅𝑐 = 3; (iii) relative threat features within a detection 
+radius 𝑅𝑑 = 3; (iv) the distance-to-goal 𝑑𝑡𝑖,𝑔 = ‖𝑃𝑔 −𝑃UAV‖. During exe-
+cution, each actor uses only 𝑜𝑡𝑖, while the centralized critic additionally 
+accesses cross-agent information under the CTDE paradigm. Therefore, 
+the reference path provides guidance through reward shaping, rather 
+than imposing a hard path-following constraint during execution.
+The proposed algorithm ﬁrst generates a global reference path for 
+each UAV, and then constructs a look-ahead guidance point along the 
+path at each time step to shape a dense guidance reward. A multi-head 
+self-attention based critic is further adopted for interaction value esti-
+mation, and temporally correlated OU noise with an annealing schedule 
+is used for stable exploration. Algorithm 1 presents the pseudo code of 
+the proposed AGP-MADDPG method.
+3.2.  Reference path generation with multi-objective constraints
+To provide a safe and globally feasible planning prior, an improved 
+A* algorithm is employed to generate a collision-free reference path for 
+each UAV. The choice of A* is mainly motivated by the requirements of 
+the proposed framework: the planner should produce an interpretable 
+and repeatable global path while allowing explicit multi-objective cost 
+design. This requirement is naturally supported by A*, whose evalu-
+ation function can be augmented with task-dependent penalty terms. 
+In contrast, RRT-based planners are more suitable for high-dimensional 
+continuous spaces, but their solution quality depends more heavily on 
+Expert Systems With Applications 333 (2027) 134264 
+3 
+
+======================================================================
+########## 第 4 页 ##########
+H. Wang et al.
+Algorithm 1 AGP-MADDPG.
+Require: Agents 1,…,N with actors {𝜋𝑖}, attention critic {𝑄𝑖}, replay 
+buﬀer , look-ahead distance Δ𝑠, OU noise schedule 𝜎𝑒
+1: for each episode do
+2: Reset  environment; sample a planning order 
+3: A*  planning: generate reference paths {Γ𝑖}𝑁𝑖=1 using  and sepa-
+ration cost 
+4: for 𝑡 =𝑡 = 0, …,𝑇 − 1 do
+5: for each agent 𝑖 do
+6: Select  action with temporally correlated exploration: 𝑎𝑡𝑖 ←
+𝜋𝑖(𝑜𝑡𝑖) + OU(𝜎𝑒)
+7: Guidance  point on path: 𝑃𝑡𝑖,guide ← GuidePoint(𝑃UAV, Γ𝑖, Δ𝑠)
+8: Execute  joint action 𝐚𝑡; observe next state 𝐨𝑡+1 and base rewards 
+𝐫𝑡𝑖,task
+9: for each agent 𝑖 do
+10: Dense  shaping: compute 𝑟𝑡𝑖,guide
+11: Form  ﬁnal reward: 𝑟𝑡𝑖 ←𝑟𝑡𝑖,task +𝑟𝑡𝑖,guide {𝑟task includes arrival 
+reward and safety penalties}
+12: Store  transition (𝐨𝑡, 𝐚𝑡, 𝐫𝑡, 𝐨𝑡+1) into 
+13: Sample  batch  from 
+14: Critic  update with attention aggregation: compute features ̃ 𝑐𝑖 =
+Attention([𝑜𝑗,𝑎𝑗 ]𝑁𝑗=1) and update 𝑄𝑖
+15: Update  actors {𝜋𝑖} and target networks as in standard MADDPG
+stochastic sampling, and the convergence speed of RRT* remains a prac-
+tical concern (Guan et al., 2025). APF-based methods are computa-
+tionally eﬃcient but less reliable in dense obstacle environments due 
+to local-minimum issues (Kumar et al., 2025). Therefore, A* is better 
+aligned with the objective of reference path generation in the proposed 
+framework.
+The A* reference path is calculated based on a discretized search 
+graph in the 3D environment. We discretize the environment into a uni-
+form 3D grid with resolution 𝛿 = 0.15 along each axis. Each node cor-
+responds to a grid center (𝑥0 +𝑖𝛿, 𝑦0 +𝑗𝛿, 𝑧0 +𝑘𝛿), and edges connect 
+adjacent grids in the 26-neighborhood. The step cost is set to the Eu-
+clidean distance between adjacent grid centers. The standard A* evalu-
+ation function is deﬁned as:
+𝑓 (𝑛) = 𝑔(𝑛) +ℎ(𝑛) (1)
+where 𝑔(𝑛) denotes the accumulated cost and ℎ(𝑛) is the heuristic esti-
+mate, which is implemented as the Euclidean distance from node 𝑛 to 
+the goal.
+The A* evaluation function is augmented with multi-objective 
+penalty terms. Speciﬁcally, the improved evaluation function is deﬁned 
+as
+𝑓ours(𝑛) = 𝑔(𝑛) +ℎ(𝑛) +𝜆obs𝑐obs(𝑛) +𝜆sep𝑐sep(𝑛) (2)
+where 𝜆obs and 𝜆sep are weight coeﬃcients. To encourage larger safety 
+margins during planning, a continuous penalty based on the distance to 
+obstacles is introduced. Let 𝑑obs(𝑛) be the Euclidean distance from node 
+𝑛 to the obstacle surface, and let 𝑑safe be a safety threshold. We deﬁne
+𝑐obs(𝑛) =
+[
+max
+(
+0, 1 − 𝑑obs(𝑛)𝑑safe
+)]2
+(3)
+This term increases smoothly as the node approaches obstacles, provid-
+ing better numerical smoothness and optimization stability than hard 
+collision constraints.
+We adopt sequential planning and introduce an inter-UAV path-
+proximity penalty. The reference paths are generated once at the be-
+ginning of each episode and kept ﬁxed for the entire episode. In each 
+episode, an unplanned UAV is randomly selected for planning until all 
+UAVs obtain reference paths. Let <𝑖 denote the reference paths gen-
+erated for agents planned before UAV 𝑖 in the sampled order. Points 
+are uniformly sampled along these polylines with arc-length spacing 
+Fig. 3. Illustration of the dynamic guidance point construction in a 3D scenario. 
+𝑃near is the nearest projection of 𝑃UAV on the reference path, and 𝑃guide is obtained 
+by moving a look-ahead distance Δ𝑠 along the reference path from 𝑃near.
+𝛿𝑠 = 0.15 to form <𝑖, where 𝑝 denotes a sampled point on the previously 
+planned paths, and 𝑥(𝑛) denotes the coordinate of node 𝑛. We deﬁne
+𝑐sep(𝑛) =
+∑
+𝑝∈<𝑖
+exp
+(
+− ‖𝑥(𝑛) −𝑝‖2
+2𝜎2sep
+)
+(4)
+where 𝜎sep is a bandwidth parameter controlling the inﬂuence range of 
+previously planned paths.
+3.3.  Dynamic path guidance based on real-time position
+During training, each UAV is guided by both the goal and the guid-
+ance points deﬁned on its reference path. At each time step, the refer-
+ence path is represented as a piecewise-linear curve Γ(𝑠) parameterized 
+by arc length 𝑠 ∈ [0,𝐿 ], where 𝐿 denotes the total path length. Given the 
+real-time UAV position 𝑃UAV, its nearest projection onto the reference 
+path is ﬁrst calculated as:
+𝑠near = arg min𝑠∈[0,𝐿] ‖Γ(𝑠) −𝑃UAV‖
+𝑃near = Γ(𝑠near)
+(5)
+Then, using a predeﬁned look-ahead distance Δ𝑠, we deﬁne the guidance 
+point as the point located Δ𝑠 ahead along the reference path starting 
+from 𝑃near:
+𝑃guide = Γ(min(𝑠near + Δ𝑠, 𝐿)) (6)
+In implementation, Γ(𝑠) is a polyline formed by the A* waypoints. 
+𝑃near is obtained by projecting 𝑃UAV onto each line segment and select-
+ing the closest projection. Γ(𝑠near + Δ𝑠) is computed by locating the cor-
+responding segment and linearly interpolating between its end points, 
+as illustrated in Fig. 3.
+Based on the Euclidean distance between 𝑃UAV and 𝑃guide, the dense 
+guidance reward is deﬁned as
+𝑟guide =𝛼 max
+(
+0, 1 −
+(𝑑(𝑃guide,𝑃 UAV)
+𝑅𝑔
+)2)
+(7)
+where 𝛼 is a gain coeﬃcient, 𝑑(⋅, ⋅) is the Euclidean distance, and 𝑅𝑔 is 
+the guidance sensing range. This term provides smooth and direction-
+consistent feedback along the reference path, which improves explo-
+ration eﬃciency in long-horizon navigation.
+To enforce safety constraints, additional penalties are introduced for 
+obstacle proximity, direct collision, and inter-UAV spacing. When the 
+UAV enters the obstacle sensing region but has not yet collided with the 
+obstacle, an obstacle proximity penalty is imposed:
+𝑟obstacle =
+⎧
+⎪
+⎨
+⎪⎩
+𝛽
+(
+1
+𝑑𝑜 −𝑅obstacle
+− 1𝑅𝑜
+)
+𝑅obstacle <𝑑 𝑜 ≤𝑅𝑜
+0 𝑑𝑜 >𝑅 𝑜
+(8)
+Expert Systems With Applications 333 (2027) 134264 
+4 
+
+======================================================================
+########## 第 5 页 ##########
+H. Wang et al.
+Table 1 
+Parameter settings for reference path planning and reward 
+shaping.
+ Parameter  Value  Description
+𝜆obs  0.35  Obstacle-cost weight
+𝜆sep  0.05  Inter-UAV separation-cost weight
+𝑑safe  0.5  Obstacle safety threshold
+𝜎sep  0.3  Separation-kernel bandwidth
+𝛼  2.0  Guidance reward gain
+𝛽 -0.8  Obstacle proximity penalty coeﬃcient
+𝜂  1.5  Collision penalty coeﬃcient
+𝜏  0.5  Inter-UAV spacing penalty coeﬃcient
+𝑅𝑔  1.5  Guidance sensing range
+𝑅𝑜  2.0  Obstacle safety buﬀer
+𝑑0  1.0  Minimum inter-UAV distance
+where 𝑑𝑜 denotes the Euclidean distance between the UAV and the ob-
+stacle center, 𝑅obstacle denotes the threat radius. 𝑅𝑜 is the safety buﬀer 
+and 𝛽 controls the strength of the penalty.
+If the UAV intersects the obstacle region, a stronger collision penalty 
+is imposed:
+𝑟collision =
+⎧
+⎪
+⎨
+⎪⎩
+𝜂
+(𝑑𝑜 −𝑅obstacle
+𝑅obstacle
+− 1
+)
+𝑑𝑜 ≤𝑅obstacle
+0 𝑑𝑜 >𝑅 obstacle
+(9)
+where 𝜂 is the collision penalty coeﬃcient.
+To maintain a minimum inter-UAV safe distance 𝑑0, we deﬁne
+𝑟uav-uav =
+⎧
+⎪
+⎨
+⎪⎩
+𝜏(𝑑𝑢 −𝑑0) 𝑑𝑢 ≤𝑑0
+0 𝑑𝑢 >𝑑 0
+(10)
+where 𝑑𝑢 denotes the Euclidean distance between the UAV and its near-
+est neighboring UAV, and 𝜏 controls the strength of the penalty. Finally, 
+the composite reward per-agent is computed as
+𝑟𝑖 =𝑟arrive +𝑟guide +𝑟uav-uav +𝑟obstacle +𝑟collision (11)
+where 𝑟arrive is the reward for the terminal task, which is granted only 
+if the UAV reaches its goal.
+In our experiments, the guidance point reward acts as a soft prior 
+for exploration rather than a hard trajectory-tracking constraint. Since 
+the ﬁnal objective also includes task reward and safety penalties, the 
+learned policy is not required to strictly follow the A* reference path 
+and can depart from it when necessary for task completion or safety. 
+Moreover, because the guidance point is recomputed online from the 
+UAV’s real-time position, the guidance remains adaptive when the exe-
+cuted trajectory departs from the reference path. In general, the dense 
+guidance reward serves as a shaping term and is combined with other 
+rewards to form the ﬁnal training signal. This design provides consistent 
+and smooth gradients throughout the training, improving convergence 
+eﬃciency and stability. The key parameters used for reference path plan-
+ning and reward shaping are summarized in Table 1. The planning and 
+reward-related parameters were selected according to the environment 
+scale, obstacle distribution, inter-UAV safety requirements, and prelim-
+inary tuning results. These parameters jointly encourage safe obstacle 
+clearance, reduce excessive inter-UAV path overlap, provide dense guid-
+ance feedback without hard trajectory-tracking constraints, and balance 
+navigation eﬃciency with safety during policy learning.
+3.4.  Attention-based multi-agent information aggregation
+A multi-head self-attention aggregation module is introduced into 
+the critic to adaptively select and fuse interaction information, enabling 
+the critic to focus on the most relevant agents for value estimation. The 
+overall workﬂow of the proposed attention-based critic is illustrated in 
+Fig. 4.
+Fig. 4. Overview of the multi-head self-attention aggregation used in the cen-
+tralized critic, where 𝑊𝑄, 𝑊𝐾, 𝑊𝑉 denote head-speciﬁc parameter matrices.
+For agent 𝑖, its observation and action are concatenated as 𝑥𝑖 =
+[𝑜𝑖,𝑎𝑖] ∈ ℝ𝑑in and mapped into an embedding space through a shared en-
+coder: 𝑒𝑖 =𝑓enc(𝑥𝑖) ∈ ℝ𝑑 . All embeddings are then stacked into a matrix 
+𝐸 = [𝑒1, …,𝑒𝑁 ]⊤. For each attention head 𝑚 ∈ {1, …,𝐻 }, linear projec-
+tions are applied as
+𝑄(𝑚) =𝐸𝑊 (𝑚)𝑄 , 𝐾 (𝑚) =𝐸𝑊 (𝑚)𝐾 , 𝑉 (𝑚) =𝐸𝑊 (𝑚)𝑉 (12)
+where 𝑊 (𝑚)𝑄 ,𝑊 (𝑚)𝐾 ,𝑊 (𝑚)𝑉  are learnable parameter matrices. The scaled 
+dot-product attention is then computed as
+𝐴(𝑚) = Softmax
+(
+𝑄(𝑚)𝐾 (𝑚)⊤
+√
+𝑑𝑘
+)
+(13)
+where 𝑑𝑘 is the key dimension. The attention weights are used to aggre-
+gate value vectors:
+𝐶 (𝑚) =𝐴(𝑚)𝑉 (𝑚) (14)
+Finally, the multi-head contexts are concatenated and projected as
+̃𝐶 = Concat(𝐶 (1), …,𝐶 (𝐻))𝑊𝑂 (15)
+where the 𝑖-th row ̃ 𝑐𝑖 of ̃𝐶 is the attended embedding for agent 𝑖. Per-
+agent action value estimates are obtained by applying a shared MLP 
+head row-wise:
+𝑄𝑖(𝑜,𝑎 ) = 𝑓𝑄(̃ 𝑐𝑖), 𝑖 = 1, …,𝑁 (16)
+where 𝑓𝑄(⋅) maps the attended embedding to a scalar 𝑄 value.
+During training, the attention-based critic is optimized with the stan-
+dard MADDPG temporal-diﬀerence update. The target actors are used to 
+generate the next actions of all agents, based on which the target critic 
+computes the bootstrap value for each agent. The critic is then trained 
+to reduce the Bellman error between the current and target value es-
+timates. Although a separate value is produced for each agent, the es-
+timate is obtained from joint observation-action information through 
+self-attention, and thus remains centralized under the CTDE framework. 
+This design keeps the input scale controlled while explicitly learning key 
+interaction partners via attention weights, improving value estimation 
+accuracy and providing more reliable gradients for policy updates.
+3.5.  Exploration with adaptive OU noise
+OU noise is injected into the policy outputs to induce exploration that 
+better conforms to the continuity constraints of UAV dynamics. Com-
+pared with Gaussian noise, the OU process exhibits mean reversion and 
+temporal correlation, making consecutive noise samples statistically de-
+pendent. As a result, the induced action perturbations are smoother over 
+time, which mitigates irregular jitter and reduces the risk of unstable 
+control and safety violations.
+Expert Systems With Applications 333 (2027) 134264 
+5 
+
+======================================================================
+########## 第 6 页 ##########
+H. Wang et al.
+Table 2 
+Training hyperparameter settings used in 
+experiments.
+ Parameter  Value
+ Discount factor  0.95
+ Batch size  128
+ Capacity of the replay buﬀer  100,000
+ Maximum episodes  10,000
+ Maximum steps per episode  150
+ Optimizer  Adam
+ Learning rate for the critic  0.001
+ Learning rate for the actor  0.0001
+ Actor hidden layers (256, 256)
+ Critic embedding dimension  128
+ Number of attention heads 𝐻  4
+Let the deterministic policy of agent 𝑖 output 𝑎𝑡𝑖 =𝜋𝜃(𝑜𝑡𝑖) at time step 
+𝑡. The executed action is
+̃ 𝑎𝑡𝑖 =𝑎𝑡𝑖 +𝜖𝑡𝑖 (17)
+where 𝜖𝑡𝑖 denotes the OU noise term. The OU process is updated as:
+𝜖𝑡+1𝑖 =𝜖𝑡𝑖 +𝜃OU(𝜇 −𝜖𝑡𝑖 )Δ𝑡 +𝜎𝑒√Δ𝑡𝜉𝑡, 𝜉 𝑡 ∼  (0,𝐼 ) (18)
+where 𝜇 is the long-term mean (set to 0 in our implementation), 𝜃OU con-
+trols the mean-reversion rate, and 𝜎𝑒 determines the noise magnitude. 
+This formulation preserves the directional consistency of perturbations 
+over short time scales.
+To balance exploration and exploitation throughout training, a linear 
+annealing scheme is further adopted for the noise standard deviation. 
+Speciﬁcally, 𝜎𝑒 is decreased with the training episode index 𝑒 as
+𝜎𝑒 = max
+(
+𝜎min, 𝜎init − 𝜎init −𝜎min𝐸decay ⋅𝑒
+)
+(19)
+where 𝜎init and 𝜎min denote the initial and minimum noise magnitudes, 
+respectively, 𝐸decay is the decay horizon, and 𝑒 is the current training 
+episode. In the early training stage, larger noise improves exploration 
+coverage. As learning progresses, 𝜎𝑒 is linearly annealed to reduce ran-
+domness and variance in target estimation, thereby stabilizing critic up-
+dates and helping the actor converge to high-quality behaviors.
+4.  Experiments and results
+4.1.  Simulation environment
+To evaluate the eﬀectiveness of the proposed method, a simulation 
+environment for multi-UAV autonomous obstacle avoidance and trajec-
+tory planning was constructed. The simulation was conducted in a 3D 
+continuous space with discrete time steps. The experimental scenarios 
+were categorized into two types: basic and extended scenarios. The ba-
+sic scenarios include three types of threat zones: severe-weather zones, 
+no-ﬂy zones, and radar-detection zones. In the extended scenarios, the 
+number of UAVs is increased from three to six, while the map scale is 
+enlarged. Furthermore, threat density is intensiﬁed by expanding the 
+range of threats and increasing the number of them. Each UAV in the 
+simulation environment is equipped with an active threat detection sys-
+tem. When a threat zone falls within the UAV’s detection range, the 
+UAV acquires real-time information regarding the threats, including the 
+center coordinates, radius, and type of the threat. UAVs can exchange 
+position information in real time when they are within the communica-
+tion range.
+The experiments were conducted on a workstation with an i7-
+12800HX CPU, an NVIDIA GeForce RTX 4070 Laptop GPU, and 32 
+GB RAM. The software environment included Microsoft Windows 11, 
+Python 3.13.5, PyTorch 2.9.1, and CUDA 13.0. Each UAV is controlled 
+by an independent actor 𝜋𝑖 that maps local observations to continuous 
+Fig. 5. Simulation scenario for comparative evaluation of path planning algo-
+rithms in multi-UAV cooperative planning.
+actions. All actors adopt the same Multi-Layer Perceptron (MLP) archi-
+tecture but are trained with separate parameters. The actor is a two-
+layer MLP with hidden widths (256, 256), where each hidden layer con-
+sists of a linear layer, layer normalization, and a ReLU activation and 
+the output is squashed by tanh(⋅) to the normalized range (−1, 1). The 
+normalized action in (−1, 1) is linearly scaled to the physical control 
+bounds [−𝜋∕9, 𝜋∕9] during both training and evaluation. For central-
+ized training, we use a shared attention-based critic that outputs per-
+agent 𝑄 values. The critic embeds each state–action pair [𝑜𝑖,𝑎𝑖] into a 
+128-dimensional representation and applies a multi-head self-attention 
+module. A ﬁnal MLP head projects the attended embeddings to scalar 𝑄-
+value estimates for all agents. Exploration is induced by OU noise with 
+𝜃OU = 0.15, 𝜎init = 0.2, and linear annealing to 𝜎min = 0.1 over training. 
+The key hyperparameters used for training are summarized in Table 2.
+4.2.  Evaluation of improved A* reference path generation
+To justify the choice of improved A* as the reference path planner 
+in our framework, we conducted comparative experiments among im-
+proved A*, APF, and RRT*, which are representative path planning al-
+gorithms. The experiments were performed in 50 randomly generated 
+multi-UAV cooperative planning scenarios. In each scenario, both the 
+obstacle locations and the start–goal conﬁgurations of the UAVs were 
+randomly generated. The environment setting is illustrated in Fig. 5. 
+Evaluation metrics include cooperative mean path length, minimum ob-
+stacle clearance, minimum inter-UAV separation, and path smoothness. 
+The mean path length is deﬁned as the average length of the planned 
+paths of all UAVs. The minimum obstacle clearance denotes the mini-
+mum distance from any point on the path to the surface of the nearest 
+obstacle. The minimum inter-UAV separation is deﬁned as the minimum 
+distance between the planned paths of any two UAVs. Path smoothness 
+is used to characterize the abruptness of directional changes along the 
+path, and a smaller value indicates a smoother and more regular trajec-
+tory.
+As shown in Table 3, the improved A* planner used in the pro-
+posed framework is compared with APF and RRT* in terms of eﬃ-
+ciency, safety, and trajectory quality. APF achieves the shortest mean 
+path length, 24.24 ± 4.47, indicating relatively high path eﬃciency in 
+successful cases. It also yields the largest minimum inter-UAV sep-
+aration, 0.71 ± 0.07, suggesting better path dispersion among agents. 
+Expert Systems With Applications 333 (2027) 134264 
+6 
+
+======================================================================
+########## 第 7 页 ##########
+H. Wang et al.
+Table 3 
+Comparison of diﬀerent path planning algorithms, where A* denotes the im-
+proved A* used in our framework.
+ Path length ↓  Obstacle clearance ↑  Inter-UAV separation ↑  Path smoothness ↓
+ APF 𝟐𝟒.𝟐𝟒 ± 𝟒.𝟒𝟕 0.97 ± 0.06 𝟎.𝟕𝟏 ± 𝟎.𝟎𝟕 7.93 ± 2.81
+ RRT* 27.71 ± 1.06 0.57 ± 0.03 0.16 ± 0.12 9.85 ± 1.31
+ A* 24.76 ± 1.18 𝟏.𝟎𝟖 ± 𝟎.𝟐𝟓 0.47 ± 0.30 𝟒.𝟓𝟑 ± 𝟎.𝟕𝟒
+Fig. 6. Training reward curves of the proposed method and compared baselines 
+in the basic scenarios.
+However, its larger variance in both path length and smoothness indi-
+cates relatively lower stability across scenarios. In contrast, RRT* pro-
+duces the longest paths, 27.71 ± 1.06, together with the smallest obstacle 
+clearance, 0.57 ± 0.03, and the lowest inter-UAV separation, 0.16 ± 0.12, 
+implying weaker performance in both safety and coordination under 
+the current setting. Compared with APF and RRT*, the improved A* 
+achieves the best obstacle clearance, 1.08 ± 0.25, and the lowest path 
+smoothness value, 4.53 ± 0.74, indicating that it can generate trajecto-
+ries with larger safety margins and fewer abrupt directional changes. 
+Although its mean path length, 24.76 ± 1.18, is slightly higher than APF, 
+it remains substantially shorter than RRT* and shows smaller variation 
+than APF, reﬂecting better overall stability. In terms of inter-UAV sep-
+aration, the improved A* does not achieve the best result, but it still 
+maintains a reasonable safety distance between planned paths while 
+providing clear advantages in obstacle avoidance and trajectory regu-
+larity. These results show that the proposed improved A* oﬀers the most 
+balanced performance among the compared planners. Therefore, for the 
+cooperative multi-UAV path planning task considered in this paper, the 
+improved A* is a more suitable choice for reference path generation.
+4.3.  Performance evaluation in basic scenarios
+Experiments were conducted in the simulation environment. We in-
+vestigated the eﬀect of incorporating attention-based value estimation 
+and dense guidance rewards. The compared baselines include several 
+representative RL methods: Independent Deep Deterministic Policy Gra-
+dient (IDDPG), MADDPG, Multi-Agent Twin Delayed Deep Determinis-
+tic Policy Gradient (MATD3), and Attention Mechanism based Multi-
+Agent Deep Deterministic Policy Gradient (AM-MADDPG) (Xing et al., 
+2025). To provide a more comprehensive comparison with recent repre-
+sentative hybrid planning-RL methods, Potential Field-Guided Improved 
+Twin Delayed Deep Deterministic Policy Gradient (PG-ITD3) (Ren et al., 
+2025) and Soft Actor-Critic with Artiﬁcial Potential Field guidance 
+(SAC-APF) (Jin et al., 2025) were also included as baselines. PG-ITD3 
+employs an improved TD3 framework to learn an adaptive policy for 
+adjusting the repulsive gain coeﬃcients in the method, while SAC-APF 
+integrates SAC-based global decision-making with APF-based local ob-
+stacle avoidance.
+For a fair comparison, all methods were trained using the same en-
+vironmental settings and action bounds. During evaluation, all meth-
+ods were tested under the same random seeds, number of test episodes, 
+and Gaussian action noise, while algorithm-speciﬁc modules were kept 
+consistent with their original designs. Fig. 6 shows the training reward 
+curves of diﬀerent algorithms. All curves are averaged over 𝑆train = 3
+random seeds. The solid line shows the mean, and the shaded region 
+denotes the standard deviation across diﬀerent seeds.
+The experimental results demonstrate that the standard MAD-
+DPG requires approximately 6,000 episodes to achieve convergence. 
+In contrast, AGP-MADDPG, which integrates dense guidance rewards 
+and multi-head self-attention, reaches convergence after approximately 
+4,000 episodes, reducing the number of training episodes to con-
+vergence by 33.3%. Moreover, AGP-MADDPG achieves a substantially 
+higher cumulative reward than the baselines. This suggests that the 
+proposed architectural enhancements not only accelerate the learning 
+process but also promote more eﬀective exploration, leading to im-
+proved ﬂight trajectories. In comparative experiments, AGP-MADDPG 
+consistently demonstrates superior performance. It converges roughly 
+3,000 episodes earlier than IDDPG while attaining a markedly higher 
+ﬁnal reward. Compared to MATD3, AGP-MADDPG exhibits faster con-
+vergence and improved training stability. For SAC-APF, although SAC-
+based global decision-making and APF-based local obstacle avoidance 
+improve its convergence performance, its target search oriented hybrid 
+design is less eﬀective for cooperative long-horizon multi-UAV trajec-
+tory planning. In contrast, AGP-MADDPG further combines global ref-
+erence path guidance with attention-based cooperative value estima-
+tion. Relative to PG-ITD3, AGP-MADDPG achieves a higher ﬁnal reward 
+and faster convergence. PG-ITD3 combines improved APF with ITD3 to 
+adaptively tune repulsive gain coeﬃcients; however, its reliance on local 
+potential-ﬁeld information and indirect control through repulsive-gain 
+adjustment limit its performance in cooperative long-horizon multi-UAV 
+planning. Although AM-MADDPG alleviates redundant interaction noise 
+and input-dimension inﬂation introduced by direct concatenation in the 
+conventional centralized critic, AGP-MADDPG incorporates a planning 
+prior guided learning framework, thereby enhancing exploration eﬃ-
+ciency. Consequently, AGP-MADDPG achieves additional gains in both 
+convergence speed and performance. Overall, these results validate the 
+eﬀectiveness of the proposed attention-based critic and dense guidance 
+reward design for cooperative multi-agent trajectory planning. To pro-
+vide a qualitative comparison of the planned behaviors, Fig. 7 visualizes 
+representative multi-UAV trajectories generated by the compared meth-
+ods in the basic scenarios.
+All metrics were validated post-training by injecting Gaussian noise 
+(𝜇 = 0, 𝜎 = 0.06) into the bounded action space [−𝜋∕9, 𝜋∕9], where the 
+noise magnitude constitutes approximately 17.5% of the one-sided actu-
+ation bound. The learned policies were evaluated over 𝑁test = 5 inde-
+pendent random seeds, with 1,000 test episodes per seed. The average 
+decision steps and mean trajectory length were computed over success-
+ful episodes in which all UAVs avoided threats and reached their goals, 
+whereas the mission success rate was computed over all test episodes. 
+The reported results are summarized as mean ± standard deviation 
+across the 𝑁test seeds. The key metrics are deﬁned as follows: (1) Aver-
+age decision steps: the mean number of decision steps required to reach 
+the goal from the start over successful episodes; (2) Mean trajectory 
+length: the average length of the executed ﬂight path over successful 
+episodes; (3) Mission success rate: the proportion of all test episodes 
+in which all UAVs satisfy collision-avoidance constraints and success-
+fully reach their goals. Table 4 summarizes the baseline results under 
+the same evaluation setting, reporting the key metrics for comparison.
+Table 4 presents the consistent improvements of the proposed 
+method in the basic scenarios. AGP-MADDPG outperforms the baselines 
+across all metrics, validating the hypothesis that integrating planning-
+based prior guidance with attention-based value estimation leads to 
+superior overall performance. These improvements indicate that the 
+proposed framework not only enhances task completion reliability but 
+also improves decision eﬃciency and trajectory quality. Compared with 
+MADDPG and IDDPG, AGP-MADDPG attains the smallest average deci-
+sion steps (13.42) and the shortest mean trajectory length (7.65). This 
+Expert Systems With Applications 333 (2027) 134264 
+7 
+
+======================================================================
+########## 第 8 页 ##########
+H. Wang et al.
+Fig. 7. Representative planned trajectories of diﬀerent methods in the basic scenarios.
+Table 4 
+Comparative analysis of three key metrics in the basic scenarios (mean ± std across 𝑁test = 5
+seeds).
+ Average decision steps ↓  Mean trajectory length ↓  Mission success rate ↑
+ IDDPG 17.13 ± 1.30 9.86 ± 0.70 89.6 ± 2.8
+ MADDPG 15.31 ± 0.90 8.76 ± 0.55 93.8 ± 1.8
+ MATD3 15.14 ± 0.80 8.67 ± 0.50 94.2 ± 1.5
+ SAC-APF 14.75 ± 0.63 8.23 ± 0.41 95.6 ± 1.1
+ PG-ITD3 13.59 ± 0.47 7.81 ± 0.29 96.4 ± 0.7
+ AM-MADDPG 13.86 ± 0.55 7.92 ± 0.36 98.1 ± 0.5
+ AGP-MADDPG 𝟏𝟑.𝟒𝟐 ± 𝟎.𝟓𝟎 𝟕.𝟔𝟓 ± 𝟎.𝟑𝟑 𝟗𝟖.𝟓 ± 𝟎.𝟒
+suggests that the A* guidance point reward provides a denser and more 
+structured learning signal, encouraging agents to follow globally fea-
+sible routes and reducing redundant detours during long-horizon ex-
+ploration. As a result, the learned policies can reach the target regions 
+with fewer ineﬀective actions and generate more compact trajectories 
+while maintaining safe navigation. Regarding the hybrid planning-RL 
+baselines, SAC-APF reduces the average decision steps and mean trajec-
+tory length to 14.75 and 8.23, and improves the mission success rate to 
+95.6%, indicating that APF-based local obstacle avoidance can enhance 
+navigation eﬃciency. PG-ITD3 further achieves 13.59 decision steps and 
+7.81 trajectory length, showing that adaptive repulsive-gain tuning is 
+beneﬁcial for path eﬃciency. However, its mission success rate remains 
+lower than that of AM-MADDPG, suggesting that local potential-ﬁeld 
+guidance alone is insuﬃcient to ensure highly reliable multi-UAV coor-
+dination.
+Both AM-MADDPG and AGP-MADDPG achieve mission success rates 
+above 98%, substantially higher than the standard MADDPG (93.8%) 
+and MATD3 (94.2%). AGP-MADDPG achieves high reliability with im-
+proved eﬃciency. This suggests that the attention-based critic stabilizes 
+coordination by suppressing interaction noise, while planning-based 
+prior provides additional eﬃciency gains without sacriﬁcing trajectory 
+quality. The results in basic scenarios demonstrate that AGP-MADDPG 
+achieves a better trade-oﬀ between safety and eﬃciency in multi-UAV 
+trajectory planning. Unlike baselines that sacriﬁce path optimality for 
+safety, our hybrid framework leverages planning priors to regularize 
+long-horizon exploration while depending on attention mechanisms for 
+local stability, achieving a comprehensive performance advantage.
+4.4.  Scalability and robustness in extended scenarios
+To further evaluate AGP-MADDPG at a larger task scale, we con-
+structed an extended scenario with a larger map, more UAVs, and a 
+greater number and spatial extent of threat regions. Compared with 
+the basic scenarios, the extended scenarios require agents to handle a 
+higher-dimensional state space, longer-horizon trajectory dependencies, 
+and more intense competition for safe and collision-free paths. Fig. 8 
+provides a qualitative comparison by visualizing representative multi-
+UAV trajectories generated by the compared methods in the extended 
+scenarios.
+Table 5 presents the results under the extended setting. AGP-
+MADDPG achieves the best overall performance, and its advantages re-
+main evident as the map scale, UAV number, and threat density increase 
+within the evaluated range. Compared to the baseline MADDPG, AGP-
+MADDPG improves the mission success rate by 17.7 percentage points 
+while reducing the mean trajectory length by approximately 18.5% and 
+the average decision steps by about 17.8%, demonstrating that it can 
+markedly enhance reliability together with decision eﬃciency and path 
+quality. In the extended scenarios, the hybrid planning-RL baselines 
+also show improvements over conventional MARL methods. SAC-APF 
+improves the mission success rate to 79.7%, indicating that APF-based
+Expert Systems With Applications 333 (2027) 134264 
+8 
+
+======================================================================
+########## 第 9 页 ##########
+H. Wang et al.
+Fig. 8. Representative planned trajectories of diﬀerent methods in the extended scenarios.
+Table 5 
+Comparative analysis of three key metrics in the extended scenarios (mean ± std across 
+𝑁test = 5 seeds).
+ Average decision steps ↓  Mean trajectory length ↓  Mission success rate ↑
+ IDDPG 41.11 ± 3.83 24.32 ± 2.13 67.4 ± 4.7
+ MADDPG 37.12 ± 3.02 18.23 ± 1.82 72.7 ± 3.6
+ MATD3 36.83 ± 2.81 18.07 ± 1.75 74.1 ± 3.8
+ SAC-APF 36.27 ± 2.67 17.75 ± 1.62 79.7 ± 3.2
+ PG-ITD3 35.64 ± 2.35 17.21 ± 1.49 82.3 ± 2.6
+ AM-MADDPG 33.17 ± 1.84 16.14 ± 1.12 86.7 ± 2.7
+ AGP-MADDPG 𝟑𝟎.𝟓𝟏 ± 𝟏.𝟐𝟐 𝟏𝟒.𝟖𝟓 ± 𝟎.𝟔𝟓 𝟗𝟎.𝟒 ± 𝟐.𝟑
+local obstacle avoidance provides useful guidance in the extended set-
+ting. PG-ITD3 further improves the success rate to 82.3%, with lower
+decision steps and shorter trajectories than SAC-APF, suggesting that 
+adaptive repulsive-gain tuning is beneﬁcial for path eﬃciency. Nev-
+ertheless, both SAC-APF and PG-ITD3 still perform worse than AM-
+MADDPG and AGP-MADDPG under the extended scenarios. This
+indicates that local APF-based guidance alone is insuﬃcient for larger-
+scale cooperative multi-UAV tasks, where inter-agent coupling becomes 
+stronger. AM-MADDPG also exhibits competitive performance, reach-
+ing a mission success rate of 86.7%, which is substantially higher than 
+that of MADDPG (72.7%) and MATD3 (74.1%). It also achieves clear im-
+provements in both average decision steps and trajectory length, indicat-
+ing that the attention-based critic eﬀectively suppresses redundant in-
+teraction noise as the system scales up. Building on this, AGP-MADDPG 
+further reduces both average decision steps and trajectory length while 
+achieving a higher mission success rate than AM-MADDPG, implying 
+that planning-based prior guided training signals remain beneﬁcial in 
+larger-scale tasks with longer horizons and sparser feedback. In contrast, 
+IDDPG achieves a markedly lower success rate (67.4%) and the worst 
+eﬃciency metrics, indicating that purely decentralized learning with-
+out centralized value estimation struggles to resolve inter-agent con-
+ﬂicts in complex settings. Overall, in the extended scenarios, attention-
+based value aggregation together with planning prior guided training 
+improves mission success rate, decision eﬃciency, and trajectory qual-
+ity under increased task complexity.
+4.5.  Ablation studies
+To further examine the contribution of each key component in AGP-
+MADDPG, two ablated variants of the proposed method are considered. 
+The ﬁrst variant removes the guidance point reward derived from the A* 
+reference path, while the second replaces the multi-head self-attention 
+aggregation module in the critic with a conventional centralized critic.
+Fig. 9. Training reward curves in ablation studies.
+Expert Systems With Applications 333 (2027) 134264 
+9 
+
+======================================================================
+########## 第 10 页 ##########
+H. Wang et al.
+Fig. 10. Trajectories of AGP-MADDPG under diﬀerent numbers of UAVs.
+Table 6 
+Comparative analysis of three key metrics in the ablation studies under the basic scenarios (mean ± std 
+across 𝑁test = 5 seeds).
+ Average decision steps ↓  Mean trajectory length ↓  Mission success rate ↑
+ MADDPG 15.31 ± 0.90 8.76 ± 0.55 93.8 ± 1.8
+ AGP-MADDPG w/o Attention 14.24 ± 0.55 8.37 ± 0.43 95.3 ± 1.1
+ AGP-MADDPG w/o Guidance 14.45 ± 0.72 8.52 ± 0.51 96.4 ± 0.7
+ AGP-MADDPG 𝟏𝟑.𝟒𝟐 ± 𝟎.𝟓𝟎 𝟕.𝟔𝟓 ± 𝟎.𝟑𝟑 𝟗𝟖.𝟓 ± 𝟎.𝟒
+Table 7 
+Comparative analysis of three key metrics in the ablation studies under the extended scenarios (mean ±
+std across 𝑁test = 5 seeds).
+ Average decision steps ↓  Mean trajectory length ↓  Mission success rate ↑
+ MADDPG 37.12 ± 3.02 18.23 ± 1.82 72.7 ± 3.6
+ AGP-MADDPG w/o Attention 33.89 ± 2.13 16.48 ± 1.37 80.2 ± 3.2
+ AGP-MADDPG w/o Guidance 35.26 ± 2.45 17.13 ± 1.54 83.5 ± 2.9
+ AGP-MADDPG 𝟑𝟎.𝟓𝟏 ± 𝟏.𝟐𝟐 𝟏𝟒.𝟖𝟓 ± 𝟎.𝟔𝟓 𝟗𝟎.𝟒 ± 𝟐.𝟑
+The reward curves in Fig. 9 show that the complete AGP-MADDPG 
+consistently achieves the highest cumulative reward, with the fastest 
+convergence and the best ﬁnal performance. By contrast, removing ei-
+ther module causes a clear downward shift in the reward curve, indi-
+cating that both components are important to the overall eﬀectiveness 
+of the proposed method. Without the guidance point module, the model 
+still beneﬁts from the attention mechanism, but converges to a substan-
+tially lower ﬁnal reward than the full model. This suggests that interac-
+tion modeling alone is insuﬃcient to address the exploration diﬃculty 
+caused by sparse rewards, whereas the dense guidance signal introduced 
+by planning priors plays a key role in policy optimization. When the at-
+tention module is removed, the model can still learn steadily with the 
+help of the guidance reward, and its cumulative reward remains higher 
+than that of the model without guidance. However, its training stability 
+and ﬁnal performance are still inferior to those of the complete AGP-
+MADDPG. These results indicate that planning priors contribute more 
+directly to exploration eﬃciency and the performance upper bound, 
+while the attention module further improves the stability of multi-agent 
+value estimation and the robustness of cooperative decision-making.
+The results in Table 6 further support the above observations and 
+quantitatively demonstrate the complementary roles of the two key com-
+ponents. In particular, removing the guidance point module leads to a 
+more pronounced increase in both the average number of decision steps 
+and the trajectory length, indicating that the guidance point reward 
+plays a role in reducing unnecessary detours and improving path eﬃ-
+ciency. This result suggests that dense path-guided feedback can provide 
+more informative intermediate signals for long-horizon exploration. In 
+contrast, removing the attention module results in a more noticeable 
+drop in mission success rate, suggesting that the attention-based critic 
+is also indispensable for suppressing redundant interaction noise and 
+enhancing coordination stability among UAVs.
+The contribution of each component is further evaluated through 
+ablation studies in the extended scenarios, as shown in Table 7. Com-
+pared with the basic scenarios, the performance gaps among diﬀerent 
+variants become more pronounced as the map scale, UAV number, and 
+threat density increase. Speciﬁcally, removing the guidance point mod-
+ule leads to larger increases in decision steps and trajectory length, while 
+removing the attention module results in a more evident decrease in 
+mission success rate. These results are consistent with the observations 
+in the basic scenarios and further demonstrate that the guidance point 
+module mainly improves path eﬃciency, whereas the attention-based 
+critic enhances coordination robustness in more complex multi-UAV en-
+vironments. Overall, the ablation studies show that the guidance point 
+module and the attention module jointly improve the performance of 
+AGP-MADDPG in the multi-UAV trajectory planning task.
+4.6.  Performance analysis under varying UAV numbers
+The impact of UAV swarm size on the scalability of AGP-MADDPG is 
+assessed through additional evaluations in the extended scenarios with 
+4, 6, 8, 10, and 12 UAVs. This experiment analyzes how the swarm size 
+aﬀects cooperative decision eﬃciency, trajectory quality, and mission 
+reliability, while keeping the evaluation conditions consistent with the 
+previous experiments for comparability. As illustrated in Fig. 10, the 
+trajectories become increasingly dense as the UAV swarm size grows, 
+indicating stronger inter-agent coupling and more frequent local coor-
+dination requirements. Table 8 further quantiﬁes these observations by 
+reporting the corresponding performance metrics under diﬀerent UAV 
+numbers.
+The quantitative results are consistent with the trajectory visualiza-
+tion. As shown in Table 8, the overall performance of AGP-MADDPG 
+gradually decreases as the UAV swarm size increases. When the number 
+of UAVs increases from 4 to 12, the mission success rate decreases from 
+93.7% to 70.3%, while the average decision steps and mean trajectory 
+length increase from 28.10 to 45.28 and from 13.86 to 21.86. These re-
+sults indicate that larger UAV swarms introduce stronger inter-agent 
+coupling, more frequent collision-avoidance adjustments, and longer 
+detoured trajectories in the evaluated 3D environment. Nevertheless,
+Expert Systems With Applications 333 (2027) 134264 
+10 
+
+======================================================================
+########## 第 11 页 ##########
+H. Wang et al.
+Table 8 
+Performance comparison under varying UAV numbers in the extended scenarios (mean ± std 
+across 𝑁test = 5 seeds).
+ Number of UAVs  Average decision steps ↓  Mean trajectory length ↓  Mission success rate ↑
+ 4 28.10 ± 1.05 13.86 ± 0.56 93.7 ± 1.8
+ 6 30.51 ± 1.22 14.85 ± 0.65 90.4 ± 2.3
+ 8 34.62 ± 1.85 16.74 ± 1.07 86.1 ± 2.9
+ 10 39.43 ± 2.66 19.12 ± 1.51 79.8 ± 2.6
+ 12 45.28 ± 3.55 21.86 ± 2.18 70.3 ± 3.2
+AGP-MADDPG maintains relatively stable performance for swarm sizes 
+of up to eight UAVs. When the number of UAVs further increases to 10 
+and 12, the performance degradation becomes more pronounced. The 
+mission success rate drops to 79.8% and 70.3%, and the average deci-
+sion steps and trajectory length increase substantially.
+This performance degradation can be attributed to the rapidly in-
+creasing inter-agent coupling as the number of UAVs grows, which re-
+sults in more complex collision-avoidance constraints and intensiﬁed 
+competition for safe ﬂight corridors. This trend aligns with the scalabil-
+ity issue of MADDPG highlighted by Peng et al. (2021). They noted that 
+MADDPG relies on a centralized yet monolithic critic, where the obser-
+vations of all agents are directly concatenated into a single input repre-
+sentation. In AGP-MADDPG, the attention-based critic is introduced to 
+alleviate this limitation by selectively aggregating inter-agent informa-
+tion and suppressing redundant interaction noise. While the attention-
+based critic improves the scalability of AGP-MADDPG, further enhance-
+ments are still needed to better support larger UAV swarms with highly 
+dense inter-agent interactions.
+5.  Conclusions
+Cooperative multi-UAV trajectory planning involves sparse rewards, 
+long-horizon credit assignment, and multi-agent coordination. To ad-
+dress these issues, we proposed a hybrid MARL framework named AGP-
+MADDPG. We developed an improved A* planner with multi-objective 
+constraints to generate global reference paths that optimize path length, 
+safety margin, and inter-UAV separation. Based on real-time UAV states, 
+a guidance point mechanism was introduced to convert sparse termi-
+nal feedback into dense guidance rewards, alleviating ineﬃcient ex-
+ploration and slow convergence in long-horizon tasks. Under the CTDE 
+paradigm, we incorporated a multi-head self-attention centralized critic 
+to adaptively aggregate and weight cross-agent interaction information, 
+improving critic robustness. In addition, an adaptive OU noise strategy 
+was employed to support smooth and stable exploration consistent with 
+continuous UAV control dynamics. Simulation results show that AGP-
+MADDPG consistently outperforms baselines in both basic and extended 
+scenarios, achieving better performance in convergence speed, mission 
+success rate, decision eﬃciency, and trajectory quality. Nevertheless, 
+the current study was conducted in simulated environments with mod-
+erate obstacle densities and static threat conﬁgurations. Further valida-
+tion in more cluttered and dynamic environments is necessary to assess 
+the broader applicability of the proposed framework. In addition, the 
+observed performance degradation as the number of UAVs increases in-
+dicates that further improvements are required to support coordination 
+in larger-scale multi-UAV systems. Therefore, future work will evaluate 
+the framework in more demanding environments with higher obstacle 
+densities and dynamic uncertainties. In addition, given that the present 
+evaluation is simulation-based, AGP-MADDPG will be further validated 
+on physical quadrotor platforms in the presence of real-world sensing 
+noise, communication delays, and environmental disturbances.
+CRediT authorship contribution statement
+Hui Wang: Conceptualization, Methodology, Validation, Resources, 
+Writing – review & editing, Supervision; Xiaolei Sun: Conceptualiza-
+tion, Methodology, Software, Writing – original draft, Writing – review 
+& editing, Data curation; Yang Liu: Validation, Project administration, 
+Data curation; Chaoxu Mu: Supervision, Project administration, Fund-
+ing acquisition.
+Declaration of competing interest
+The authors declare that they have no known competing ﬁnancial 
+interests or personal relationships that could have appeared to inﬂuence 
+the work reported in this paper. 
+Acknowledgments
+The authors acknowledge the ﬁnancial support from  National Natu-
+ral Science Foundation of China, No. 62333016, and Hefei Key Science 
+and Technology Special Projects under Grant 2024SZD006. 
+Data availability
+Data will be made available on request.
+References
+Cao, P., Lei, L., Cai, S., Shen, G., Liu, X., Wang, X., Zhang, L., Zhou, L., & Guizani, M. 
+(2024). Computational intelligence algorithms for UAV swarm networking and collab-
+oration: A comprehensive survey and future directions. IEEE Communications Surveys 
+& Tutorials, 26(4), 2684–2728.
+Chai, J., Chen, W., Zhu, Y., Yao, Z.-X., & Zhao, D. (2023). A hierarchical deep reinforce-
+ment learning framework for 6-DOF UCAV air-to-air combat. IEEE Transactions on Sys-
+tems, Man, and Cybernetics: Systems, 53(9), 5417–5429.
+Darlan, D., Ajani, O. S., Paul, A., & Mallipeddi, R. (2025). A multi-objective benchmark 
+for UAV path planning with baseline results. Swarm and Evolutionary Computation, 96, 
+101968.
+Debnath, D., Vanegas, F., Sandino, J., Hawary, A. F., & Gonzalez, F. (2024). A review 
+of UAV path-planning algorithms and obstacle avoidance methods for remote sensing 
+applications. Remote Sensing, 16(21), 4019.
+Devidze, R., Kamalaruban, P., & Singla, A. (2022). Exploration-guided reward shaping for 
+reinforcement learning under sparse rewards. Advances in Neural Information Processing 
+Systems, 35, 5829–5842.
+Feiyu, Z., Dayan, L., Zhengxu, W., Jianlin, M., & Niya, W. (2024). Autonomous localized 
+path planning algorithm for UAVs based on TD3 strategy. Scientiﬁc Reports, 14(1), 763.
+Feng, M., Parimi, V., & Williams, B. (2025). Safe multi-agent navigation guided by goal-
+conditioned safe reinforcement learning. arXiv preprint arXiv:2502.17813.
+Francis, A., Faust, A., Chiang, H.-T. L., Hsu, J., Kew, J. C., Fiser, M., & Lee, T.-W. E. 
+(2020). Long-range indoor navigation with PRM-RL. IEEE Transactions on Robotics, 
+36(4), 1115–1134.
+Guan, H., Gao, Y., Zhao, M., Yang, Y., Deng, F., & Lam, T. L. (2022). Ab-mapper: At-
+tention and bicnet based multi-agent path planning for dynamic environment. In 
+2022 IEEE/RSJ International conference on intelligent robots and systems (IROS) (pp. 
+13799–13806). IEEE.
+Guan, T., Han, Y., Kong, M., Wang, S., Feng, D., & Yang, W. (2025). An improved artiﬁcial 
+potential ﬁeld with RRT star algorithm for autonomous vehicle path planning. Scientiﬁc 
+Reports, 15(1), 16982.
+Hu, H., Fazlyab, M., Morari, M., & Pappas, G. J. (2020). Reach-sdp: Reachability analysis 
+of closed-loop systems with neural network controllers via semideﬁnite programming. 
+In 2020 59th IEEE conference on decision and control (CDC) (pp. 5929–5934). IEEE.
+Iqbal, S., & Sha, F. (2019). Actor-attention-critic for multi-agent reinforcement learning. 
+In International conference on machine learning (pp. 2961–2970). PMLR.
+Jin, F., Ye, Z., Li, M., Xiao, H., Zeng, W., & Wen, L. (2025). A new hybrid reinforcement 
+learning with artiﬁcial potential ﬁeld method for UAV target search. Sensors, 25(9), 
+2796.
+Kästner, L., Zhao, X., Shen, Z., & Lambrecht, J. (2021). Obstacle-aware waypoint gen-
+eration for long-range guidance of deep-reinforcement-learning-based navigation ap-
+proaches. arXiv preprint arXiv:2109.11639.
+Expert Systems With Applications 333 (2027) 134264 
+11 
+
+======================================================================
+########## 第 12 页 ##########
+H. Wang et al.
+Kim, H., Choi, J., Do, H., & Lee, G. T. (2024). A fully controllable UAV using curriculum 
+learning and goal-conditioned reinforcement learning: From straight forward to round 
+trip missions. Drones, 9(1), 26.
+Kong, X., Zhou, Y., Li, Z., & Wang, S. (2024). Multi-UAV simultaneous target assignment 
+and path planning based on deep reinforcement learning in dynamic multiple obstacles 
+environments. Frontiers in Neurorobotics, 17, 1302898.
+Kumar, P., Pal, K., & Govil, M. C. (2025). Comprehensive review of path planning tech-
+niques for unmanned aerial vehicles (uavs). ACM Computing Surveys, 58(3), 1–44.
+Li, X., Luo, F., & Li, C. (2024). Multi-agent deep reinforcement learning-based autonomous 
+decision-making framework for community virtual power plants. Applied Energy, 360, 
+122813.
+Lin, Q., & Ma, H. (2023). Sacha: Soft actor-critic with heuristic-based attention for par-
+tially observable multi-agent path ﬁnding. IEEE Robotics and Automation Letters, 8(8), 
+5100–5107.
+Lowe, R., Wu, Y. I., Tamar, A., Harb, J., Pieter Abbeel, O., & Mordatch, I. (2017). Multi-
+agent actor-critic for mixed cooperative-competitive environments. Advances in neural 
+information processing systems, 30.
+Lyu, X., Baisero, A., Xiao, Y., Daley, B., & Amato, C. (2023). On centralized critics in multi-
+agent reinforcement learning. Journal of Artiﬁcial Intelligence Research, 77, 295–354.
+Peng, B., Rashid, T., Schroeder de Witt, C., Kamienny, P.-A., Torr, P., Böhmer, W., & White-
+son, S. (2021). Facmac: Factored multi-agent centralised policy gradients. Advances in 
+neural information processing systems, 34, 12208–12221.
+Ren, X., Geng, N., Zhang, Y., Xiao, L., & Gong, D. (2025). PG-ITD3: A potential ﬁeld-
+guided deep reinforcement learning approach for UAV path planning after disaster. 
+IEEE Transactions on Automation Science and Engineering, (pp. 20221–20233).
+Schubert, I., Oguz, O. S., & Toussaint, M. (2021). Plan-based relaxed reward shaping for 
+goal-directed tasks. arXiv preprint arXiv:2107.06661.
+Vlachos, C., Rousseas, P., Bechlioulis, C. P., & Kyriakopoulos, K. J. (2023). Re-
+inforcement learning-based optimal multiple waypoint navigation. In 2023 IEEE 
+International conference on robotics and automation (ICRA) (pp. 1537–1543). 
+IEEE.
+Wang, D., Zhong, F., Li, M., Wen, M., Peng, Y., Li, T., & Yang, A. (2024a). Romat: Role-
+based multi-agent transformer for generalizable heterogeneous cooperation. Neural 
+Networks, 174, 106129.
+Wang, Y., Shen, B., Xiong, L., Nan, Z., & Tao, W. (2024b). Costmap a* guided reinforce-
+ment learning path planning method for complex environments navigation. Journal of 
+Shanghai Jiaotong University (Science), (pp. 1–9).
+Wang, Y., Xiang, B., Huang, S., & Sartoretti, G. (2023). Scrimp: Scalable communi-
+cation for reinforcement-and imitation-learning-based multi-agent pathﬁnding. In 
+2023 IEEE/RSJ International conference on intelligent robots and systems (IROS) (pp. 
+9301–9308). IEEE.
+Wen, M., Kuba, J., Lin, R., Zhang, W., Wen, Y., Wang, J., & Yang, Y. (2022). Multi-agent 
+reinforcement learning is a sequence modeling problem. Advances in Neural Information 
+Processing Systems, 35, 16509–16521.
+Westheider, J., Rückin, J., & Popovi´c, M. (2023). Multi-uav adaptive path planning using 
+deep reinforcement learning. In 2023 IEEE/RSJ International conference on intelligent 
+robots and systems (IROS) (pp. 649–656). IEEE.
+Xing, X., Ma, Y., Lei, Y., Li, Y., & Xiao, B. (2025). Multi-UAV rendezvous trajectory plan-
+ning based on improved MADDPG algorithm in complex dynamic obstacle environ-
+ments. IEEE Transactions on Vehicular Technology.
+Yonetani, R., Taniai, T., Barekatain, M., Nishimura, M., & Kanezaki, A. (2021). Path 
+planning using neural a* search. In International conference on machine learning (pp. 
+12029–12039). PMLR.
+Yu, C., Velu, A., Vinitsky, E., Gao, J., Wang, Y., Bayen, A., & Wu, Y. (2022). The surprising 
+eﬀectiveness of ppo in cooperative multi-agent games. Advances in neural information 
+processing systems, 35, 24611–24624.
+Yuan, H., Zhang, C., Wang, H., Xie, F., Cai, P., Dong, H., & Lu, Z. (2023). Skill rein-
+forcement learning and planning for open-world long-horizon tasks. arXiv preprint 
+arXiv:2303.16563.
+Zhao, B., Huo, M., Li, Z., Yu, Z., & Qi, N. (2024). Graph-based multi-agent reinforcement 
+learning for large-scale UAVs swarm system control. Aerospace Science and Technology, 
+150, 109166.
+Zhao, Z., Zhang, Y., Chen, W., Zhang, F., Wang, S., & Zhou, Y. (2025). Sequence value 
+decomposition transformer for cooperative multi-agent reinforcement learning. Infor-
+mation Sciences, (p. 122514).
+Zhou, Y., Kong, X., Lin, K.-P., & Liu, L. (2024). Novel task decomposed multi-agent twin 
+delayed deep deterministic policy gradient algorithm for multi-UAV autonomous path 
+planning. Knowledge-Based Systems, 287, 111462.
+Expert Systems With Applications 333 (2027) 134264 
+12 
